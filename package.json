@@ -3,11 +3,26 @@
   "private": true,
   "version": "0.0.1",
   "type": "module",
+  "workspaces": [
+    "api"
+  ],
   "scripts": {
+    "all": "node scripts/ensure-api-env.mjs && concurrently -n api,web -c blue,green \"npm run api:dev\" \"npm run dev\"",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "api:env": "node scripts/ensure-api-env.mjs",
     "build": "vite build",
-    "dev": "vite"
+    "dev": "vite",
+    "preview": "vite preview",
+    "start": "serve dist -s -l 5173",
+    "api:dev": "npm run dev -w @stagebistro/api",
+    "api:build": "npm run build -w @stagebistro/api",
+    "api:start": "npm run start -w @stagebistro/api",
+    "api:seed": "npm run seed -w @stagebistro/api",
+    "api:migrate": "npm run db:migrate -w @stagebistro/api"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.69.0",
     "@emotion/react": "11.14.0",
     "@emotion/styled": "11.14.1",
     "@mui/icons-material": "7.3.5",
@@ -56,6 +71,8 @@
     "react-popper": "2.3.0",
     "react-resizable-panels": "2.1.7",
     "react-responsive-masonry": "2.7.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
     "react-router": "7.13.0",
     "react-slick": "0.31.0",
     "recharts": "2.15.2",
@@ -65,22 +82,13 @@
     "vaul": "1.1.2"
   },
   "devDependencies": {
+    "drizzle-orm": "^0.40.0",
     "@tailwindcss/vite": "4.1.12",
     "@vitejs/plugin-react": "4.7.0",
+    "concurrently": "^9.1.2",
+    "serve": "^14.2.4",
     "tailwindcss": "4.1.12",
     "vite": "6.3.5"
-  },
-  "peerDependencies": {
-    "react": "18.3.1",
-    "react-dom": "18.3.1"
-  },
-  "peerDependenciesMeta": {
-    "react": {
-      "optional": true
-    },
-    "react-dom": {
-      "optional": true
-    }
   },
   "pnpm": {
     "overrides": {
