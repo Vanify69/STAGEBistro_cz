@@ -2,3 +2,26 @@
 @source '../**/*.{js,ts,jsx,tsx}';
 
 @import 'tw-animate-css';
+
+/* Plynulý ticker v hlavičce (duplicitní text, posun o polovinu šířky) */
+@keyframes header-event-marquee {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+.header-event-marquee-track {
+  display: flex;
+  width: max-content;
+  animation: header-event-marquee linear infinite;
+  animation-duration: var(--header-marquee-sec, 22s);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .header-event-marquee-track {
+    animation: none;
+  }
+}
