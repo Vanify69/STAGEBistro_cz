@@ -19,6 +19,13 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     },
   });
   const text = await res.text();
+  if (text && text.trimStart().startsWith('<')) {
+    const hint =
+      !base && import.meta.env.PROD
+        ? ' Nastavte VITE_API_URL na veřejnou URL API služby a znovu sestavte web (Railway Variables u Web).'
+        : ' Zkontrolujte VITE_API_URL a že API běží a vrací JSON na dané cestě.';
+    throw new Error(`Odpověď není JSON (dostali jsme HTML).${hint}`);
+  }
   const data = text ? (JSON.parse(text) as unknown) : null;
   if (!res.ok) {
     const msg = typeof data === 'object' && data && 'error' in data ? String((data as { error: string }).error) : res.statusText;

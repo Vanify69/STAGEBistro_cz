@@ -113,6 +113,8 @@ Přihlášení admina odpovídá **`ADMIN_EMAIL`** / **`ADMIN_PASSWORD`** v prom
 
 **Railway → Web → Networking:** veřejná doména musí směřovat na **stejný port**, na kterém app naslouchá — typicky proměnná **`PORT`** (často `8080`). Nenastavuj ručně **5173** (to je Vite dev); jinak uvidíš „Application failed to respond“ i při běžícím `serve`.
 
+**Menu / data nenačtená, chyba o `DOCTYPE` / „not valid JSON“:** u služby **Web** chybí nebo neplatí **`VITE_API_URL`** = celá `https://…` URL **API** služby. Bez ní prohlížeč volá `/api/...` na **doméně webu** a statický server vrátí `index.html`. Po změně proměnné musí proběhnout **nový build** webu.
+
 Volitelně R2 proměnné pro nahrávání dokladů — viz `api/.env.example`.
 
 ### Chyba `secret CORS_ORIGIN: not found` (Railpack / BuildKit)
