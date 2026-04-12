@@ -109,7 +109,7 @@ Přihlášení admina odpovídá **`ADMIN_EMAIL`** / **`ADMIN_PASSWORD`** v prom
 | Služba | Root (typicky) | Build | Start | Klíčové proměnné |
 |--------|----------------|-------|-------|------------------|
 | **API** | **`api`** (doporučeno kvůli `api/Dockerfile`) nebo monorepo root | Railpack: `npm install` + `npm run build`; Docker: viz `api/Dockerfile` | `npm start` / `node dist/index.js` | `DATABASE_URL`, `SESSION_SECRET`, `CORS_ORIGIN`, volitelně `MIGRATE_ON_START`, R2 |
-| **Web** | kořen repa | `npm install && npm run build` | `npm run start` (respektuje **`PORT`**) | **`VITE_API_URL`** před buildem — **ne** `CORS_ORIGIN` |
+| **Web** | kořen repa | Doporučeno: **`Dockerfile`** v kořeni (explicitní `dist` ve image). Jinak Railpack: `npm install && npm run build`, `npm run start` | `npm run start` nebo CMD z Dockerfile | **`VITE_API_URL`** před buildem — **ne** `CORS_ORIGIN` |
 
 Volitelně R2 proměnné pro nahrávání dokladů — viz `api/.env.example`.
 

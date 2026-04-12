@@ -9,9 +9,8 @@ import { fileURLToPath } from 'node:url';
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const port = process.env.PORT ?? '5173';
 const serveMain = path.join(root, 'node_modules', 'serve', 'build', 'main.js');
-const listen = `tcp://0.0.0.0:${port}`;
-
-const child = spawn(process.execPath, [serveMain, 'dist', '-s', '-l', listen], {
+// Jen číslo portu — u `tcp://0.0.0.0:…` serve volá isPortReachable s hostem 0.0.0.0 a může špatně přepnout na náhodný port.
+const child = spawn(process.execPath, [serveMain, 'dist', '-s', '-l', String(port)], {
   stdio: 'inherit',
   cwd: root,
   env: process.env,
