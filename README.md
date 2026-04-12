@@ -92,15 +92,23 @@ Kontrola: v prohlížeči `GET …/health` na API → `{ "ok": true }`. Z webu v
 
 ### C) Data (seed: admin, menu, galerie, nastavení)
 
-Až migrace doběhly a API běží:
+Migrace vytvoří **jen tabulky** — obsah (menu, galerie, `site_settings`, admin) dodá **seed**.
 
-- **Railway:** u služby **API** použij **Run** / jednorázový shell (podle aktuálního UI), nebo lokálně z kořene repa s produkčním `DATABASE_URL` v env:
+**A) Lokálně** (máš nainstalované závislosti včetně `tsx`): zkopíruj **`DATABASE_URL`** z Railway (služba Postgres nebo API → Variables) a v kořeni repa:
 
 ```bash
+set DATABASE_URL=postgresql://...   # Windows PowerShell: $env:DATABASE_URL="..."
 npm run api:seed
 ```
 
-Pokud má API služba v Railway **Root Directory** = `api`, spusť tam ekvivalentně **`npm run seed`**.
+**B) Přímo v Railway** (produkční API image z `api/Dockerfile` — v kontejneru **není** `tsx`, seed je zkompilovaný v `dist/`):
+
+1. Služba **API** → záložka typu **Shell** / **Run** / **Execute Command** (záleží na UI).
+2. Spusť: **`node dist/seed.js`** (nebo `npm run seed:prod` z `/app`, pokud tam je `package.json` z API).
+
+Proměnné **`DATABASE_URL`**, **`ADMIN_EMAIL`**, **`ADMIN_PASSWORD`** se ve službě API berou z Railway — seed je použije stejně jako běžící server.
+
+**Pozn.:** Když už v DB něco z seedu je (např. kategorie), skript část kroků přeskočí; pro čistý reset by bylo potřeba DB promazat ručně (neřešíme v seedu).
 
 Přihlášení admina odpovídá **`ADMIN_EMAIL`** / **`ADMIN_PASSWORD`** v proměnných API (nebo výchozím z `api/.env.example`).
 
@@ -144,7 +152,8 @@ Doplňkově (když chceš zůstat u Railpacku): `CORS_ORIGIN` jako prostý text 
 | `npm run api:dev` | API s `tsx watch` |
 | `npm run api:build` | `tsc` do `api/dist/` |
 | `npm run api:start` | Produkční `node api/dist/index.js` |
-| `npm run api:seed` | Seed DB |
+| `npm run api:seed` | Seed DB (lokálně, `tsx`) |
+| `npm run api:seed:prod` | Seed z `api/dist/seed.js` (po `api:build`; v Railway kontejneru použij `node dist/seed.js`) |
 | `npm run api:migrate` | Drizzle migrace |
 
 ## Licence / design

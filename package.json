@@ -19,6 +19,7 @@
     "api:build": "npm run build -w @stagebistro/api",
     "api:start": "npm run start -w @stagebistro/api",
     "api:seed": "npm run seed -w @stagebistro/api",
+    "api:seed:prod": "npm run seed:prod -w @stagebistro/api",
     "api:migrate": "npm run db:migrate -w @stagebistro/api"
   },
   "dependencies": {
