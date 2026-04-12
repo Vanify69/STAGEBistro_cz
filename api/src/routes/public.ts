@@ -10,7 +10,7 @@ import {
 } from '../db/schema.js';
 import { todayPragueYmd } from '../lib/pragueDate.js';
 import { publicRateLimit } from '../middleware/rateLimit.js';
-import { normalizeMapEmbedSettingValue } from '../lib/mapEmbedUrl.js';
+import { resolveMapEmbedUrlForSite } from '../lib/mapEmbedUrl.js';
 
 export const publicRouter = new Hono();
 
@@ -48,9 +48,9 @@ publicRouter.get('/site', publicRateLimit, async (c) => {
       settings[row.key] = row.value;
     }
   }
-  if ('map.embedUrl' in settings) {
-    settings['map.embedUrl'] = normalizeMapEmbedSettingValue(settings['map.embedUrl']);
-  }
+  settings['map.embedUrl'] = resolveMapEmbedUrlForSite(
+    'map.embedUrl' in settings ? settings['map.embedUrl'] : ''
+  );
 
   const cats = categories.map((cat) => ({
     id: cat.id,

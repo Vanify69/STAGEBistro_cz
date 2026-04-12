@@ -1,5 +1,6 @@
 import './loadEnv.js';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
@@ -47,7 +48,8 @@ async function runMigrationsIfEnabled(): Promise<void> {
   }
   const migrationClient = postgres(url, { max: 1 });
   const d = drizzle(migrationClient);
-  const folder = path.join(process.cwd(), 'drizzle');
+  // Relativně k `api/dist/` — funguje i když `cwd` je kořen monorepa (Railway / npm z rootu).
+  const folder = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'drizzle');
   await migrate(d, { migrationsFolder: folder });
   await migrationClient.end({ timeout: 5 });
 }

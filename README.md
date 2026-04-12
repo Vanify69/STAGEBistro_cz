@@ -66,13 +66,66 @@ Veřejná data: `GET http://localhost:3001/api/public/site` (z prohlížeče př
 
 ## Railway
 
-Doporučené **dvě služby** + **PostgreSQL**:
+Na canvasu stačí **Postgres + API + Web** (viz propojení Postgres → API přes `DATABASE_URL`). **Web s API se „nepropojí“ čárou v UI** — propojení je přes **proměnné prostředí** a **CORS** níže.
 
-1. **API** — root `api`, build `npm install && npm run build`, start `npm run start`, working directory `api`. Proměnné: `DATABASE_URL`, `PORT` (Railway doplní), `SESSION_SECRET`, `CORS_ORIGIN` (URL webové služby, např. `https://web-production-xxxx.up.railway.app`), `MIGRATE_ON_START=true` pro první deploy, poté lze vypnout. Volitelně R2 proměnné.
+### A) Tabulky v Postgres (migrace)
 
-2. **Web** — root repozitáře, build `npm install && npm run build`, start `npm run start` (statický `serve` s SPA fallbackem). Nastavte `VITE_API_URL` na veřejnou URL API **před** buildem (build-time proměnná).
+1. Otevři službu **API** → **Variables**.
+2. Ověř, že **`DATABASE_URL`** odkazuje na Postgres (Railway **Reference** na proměnnou z databázové služby).
+3. Přidej **`MIGRATE_ON_START`** = `true` (nebo `1`).
+4. **Deploy / Restart** API a v **Deploy Logs** zkontroluj, že start proběhl bez chyby (migrace běží před nasloucháním na portu).
+5. Volitelně: `MIGRATE_ON_START` zase smaž nebo nastav na `false`, ať se migrace neopakují při každém restartu.
 
-3. Po nasazení spusťte jednorázově seed (Railway „Run Command“ nebo lokálně s produkčním `DATABASE_URL`): `npm run api:seed`.
+> Pozn.: Složka migrací se bere relativně k `api/dist/` (ne k `process.cwd()`), takže fungují i když službu spouštíš z kořene monorepa.
+
+### B) Propojení Web ↔ API
+
+**`CORS_ORIGIN` dej jen na službu API, ne na Web.** Frontend CORS neřeší; na Web patří **`VITE_API_URL`**. Když `CORS_ORIGIN` přidáš na **Web**, Railpack při `npm run build` často spadne na chybě `secret CORS_ORIGIN: not found` (BuildKit očekuje secret, který u webového buildu nemá být).
+
+1. Zkopíruj **veřejnou URL** služby **API** (Settings → Networking → veřejná doména, tvar `https://….up.railway.app`).
+2. Služba **Web** → **Variables** → přidej **`VITE_API_URL`** = přesně ta URL API (bez koncového `/`).  
+   **Důležité:** Vite proměnné `VITE_*` se zapisují **při buildu** — po změně musíš u **Web** spustit **nový deploy** (rebuild).
+3. Služba **API** → **Variables** → **`CORS_ORIGIN`** = **přesná** veřejná URL **webu** (včetně `https://`). Víc domén odděl čárkou.
+4. Po změně `CORS_ORIGIN` znovu **deploy API** (restart).
+
+Kontrola: v prohlížeči `GET …/health` na API → `{ "ok": true }`. Z webu v DevTools → síť: požadavky na `/api/...` jdou na doménu z `VITE_API_URL`.
+
+### C) Data (seed: admin, menu, galerie, nastavení)
+
+Až migrace doběhly a API běží:
+
+- **Railway:** u služby **API** použij **Run** / jednorázový shell (podle aktuálního UI), nebo lokálně z kořene repa s produkčním `DATABASE_URL` v env:
+
+```bash
+npm run api:seed
+```
+
+Pokud má API služba v Railway **Root Directory** = `api`, spusť tam ekvivalentně **`npm run seed`**.
+
+Přihlášení admina odpovídá **`ADMIN_EMAIL`** / **`ADMIN_PASSWORD`** v proměnných API (nebo výchozím z `api/.env.example`).
+
+### Shrnutí služeb
+
+| Služba | Root (typicky) | Build | Start | Klíčové proměnné |
+|--------|----------------|-------|-------|------------------|
+| **API** | **`api`** (doporučeno kvůli `api/Dockerfile`) nebo monorepo root | Railpack: `npm install` + `npm run build`; Docker: viz `api/Dockerfile` | `npm start` / `node dist/index.js` | `DATABASE_URL`, `SESSION_SECRET`, `CORS_ORIGIN`, volitelně `MIGRATE_ON_START`, R2 |
+| **Web** | kořen repa | `npm install && npm run build` | `npm run start` (respektuje **`PORT`**) | **`VITE_API_URL`** před buildem — **ne** `CORS_ORIGIN` |
+
+Volitelně R2 proměnné pro nahrávání dokladů — viz `api/.env.example`.
+
+### Chyba `secret CORS_ORIGIN: not found` (Railpack / BuildKit)
+
+Někdy Railpack u Node buildu předává **všechny** proměnné služby jako BuildKit **secrets**; u části projektů pak Docker hlásí `secret CORS_ORIGIN: not found` i při **správně uložené** prosté URL v `CORS_ORIGIN` — jde o chování build pipeline, ne o špatnou hodnotu v UI.
+
+**Spolehlivý obchvat:** u služby **API** použij **Dockerfile** v repu (`api/Dockerfile`):
+
+1. V Railway u služby **API** → **Settings** → **Root Directory** nastav na **`api`** (složka, kde leží `Dockerfile`).
+2. Smaž případné vlastní **Build Command** / Railpack overrides, ať Railway zvolí Docker build z tohoto souboru (po pushi repozitáře).
+3. **Start Command** nech `npm start` z `package.json` v `api` **nebo** přímo `node dist/index.js` (výsledek je stejný po `Dockerfile` CMD).
+
+Proměnné (`CORS_ORIGIN`, `DATABASE_URL`, …) zůstávají v Railway jako u Railpacku — načítají se při **běhu** kontejneru, neřeší se jako BuildKit secrets při `npm run build`.
+
+Doplňkově (když chceš zůstat u Railpacku): `CORS_ORIGIN` jako prostý text z Networking webu; staged deploy; u pádu ověř, zda log patří službě **API** nebo **Web**; zkus **`NO_CACHE=1`**. Na API v produkci nastav i **`SESSION_SECRET`**.
 
 ## Skripty (kořen)
 

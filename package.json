@@ -14,7 +14,7 @@
     "build": "vite build",
     "dev": "vite",
     "preview": "vite preview",
-    "start": "serve dist -s -l 5173",
+    "start": "node scripts/serve-web.mjs",
     "api:dev": "npm run dev -w @stagebistro/api",
     "api:build": "npm run build -w @stagebistro/api",
     "api:start": "npm run start -w @stagebistro/api",
