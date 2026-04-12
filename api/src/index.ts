@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
-import { cors } from 'hono/cors';
+import type { MiddlewareHandler } from 'hono';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
@@ -26,19 +26,47 @@ const corsOriginsRaw =
   process.env.CORS_ORIGIN?.split(',').map((s) => s.trim()).filter(Boolean) ?? ['http://localhost:5173'];
 const corsOriginKeys = new Set(corsOriginsRaw.map(originKey));
 
-app.use(
-  '*',
-  cors({
-    origin: (origin) => {
-      if (!origin) return corsOriginsRaw[0];
-      if (corsOriginKeys.has(originKey(origin))) return origin;
-      return null;
-    },
-    allowHeaders: ['Content-Type', 'Accept', 'Authorization'],
-    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    credentials: true,
-  })
-);
+if (process.env.RAILWAY_ENVIRONMENT && !process.env.CORS_ORIGIN?.trim()) {
+  console.warn(
+    '[cors] CORS_ORIGIN není nastavené — prohlížeč z Web domény dostane CORS chybu. Na službě API nastav CORS_ORIGIN na URL webu (https://…).'
+  );
+}
+console.log('[cors] povolené originy:', corsOriginsRaw.join(' | '));
+
+/**
+ * Vlastní CORS: vestavěné `hono/cors` u některých verzí nastaví Allow-Origin před `next()`,
+ * ale `c.json()` pak pošle odpověď bez těch hlaviček → prohlížeč: „No Access-Control-Allow-Origin“.
+ */
+const CORS_ALLOW_HEADERS = 'Content-Type, Accept, Authorization';
+const CORS_ALLOW_METHODS = 'GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS';
+
+const corsMiddleware: MiddlewareHandler = async (c, next) => {
+  const origin = c.req.header('Origin');
+  const allowed = origin && corsOriginKeys.has(originKey(origin)) ? origin : undefined;
+
+  if (c.req.method === 'OPTIONS') {
+    if (allowed) {
+      c.header('Access-Control-Allow-Origin', allowed);
+      c.header('Access-Control-Allow-Credentials', 'true');
+      c.header('Access-Control-Allow-Methods', CORS_ALLOW_METHODS);
+      const reqHeaders = c.req.header('Access-Control-Request-Headers');
+      c.header('Access-Control-Allow-Headers', reqHeaders ?? CORS_ALLOW_HEADERS);
+      c.header('Access-Control-Max-Age', '86400');
+      c.header('Vary', 'Origin');
+    }
+    return c.body(null, 204);
+  }
+
+  await next();
+
+  if (allowed) {
+    c.header('Access-Control-Allow-Origin', allowed);
+    c.header('Access-Control-Allow-Credentials', 'true');
+    c.header('Vary', 'Origin');
+  }
+};
+
+app.use('*', corsMiddleware);
 
 app.route('/api/public', publicRouter);
 app.route('/api/auth', authRouter);
