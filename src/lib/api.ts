@@ -10,9 +10,11 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   const base = getApiBase();
   const url = `${base}${path.startsWith('/') ? path : `/${path}`}`;
   const hasJsonBody = init?.body !== undefined && init?.body !== null;
+  const credentials = init?.credentials ?? 'include';
+  const { credentials: _c, ...rest } = init ?? {};
   const res = await fetch(url, {
-    ...init,
-    credentials: 'include',
+    ...rest,
+    credentials,
     headers: {
       ...(hasJsonBody ? { 'Content-Type': 'application/json' } : {}),
       ...(init?.headers ?? {}),

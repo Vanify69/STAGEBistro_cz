@@ -164,7 +164,7 @@ export default function HomePage() {
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['public', 'site'],
-    queryFn: () => apiFetch<PublicSitePayload>('/api/public/site'),
+    queryFn: () => apiFetch<PublicSitePayload>('/api/public/site', { credentials: 'omit' }),
   });
 
   const settings = data?.settings ?? {};

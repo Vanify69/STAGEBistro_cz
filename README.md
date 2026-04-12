@@ -85,7 +85,7 @@ Na canvasu stačí **Postgres + API + Web** (viz propojení Postgres → API př
 1. Zkopíruj **veřejnou URL** služby **API** (Settings → Networking → veřejná doména, tvar `https://….up.railway.app`).
 2. Služba **Web** → **Variables** → přidej **`VITE_API_URL`** = přesně ta URL API (bez koncového `/`).  
    **Důležité:** Vite proměnné `VITE_*` se zapisují **při buildu** — po změně musíš u **Web** spustit **nový deploy** (rebuild).
-3. Služba **API** → **Variables** → **`CORS_ORIGIN`** = **přesná** veřejná URL **webu** (včetně `https://`). Víc domén odděl čárkou.
+3. Služba **API** → **Variables** → **`CORS_ORIGIN`** = veřejná URL **webu** (`https://…`). Víc domén odděl čárkou; **koncové lomítko nevadí** (API ho při porovnání ignoruje).
 4. Po změně `CORS_ORIGIN` znovu **deploy API** (restart).
 
 Kontrola: v prohlížeči `GET …/health` na API → `{ "ok": true }`. Z webu v DevTools → síť: požadavky na `/api/...` jdou na doménu z `VITE_API_URL`.

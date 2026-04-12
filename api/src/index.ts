@@ -17,18 +17,24 @@ const app = new Hono();
 
 app.get('/health', (c) => c.json({ ok: true }));
 
-const corsOrigins =
+/** Srovnání originů (Railway často bez lomítka, v proměnné ho někdo přidá). */
+function originKey(url: string): string {
+  return url.trim().replace(/\/+$/, '');
+}
+
+const corsOriginsRaw =
   process.env.CORS_ORIGIN?.split(',').map((s) => s.trim()).filter(Boolean) ?? ['http://localhost:5173'];
+const corsOriginKeys = new Set(corsOriginsRaw.map(originKey));
 
 app.use(
   '*',
   cors({
     origin: (origin) => {
-      if (!origin) return corsOrigins[0];
-      if (corsOrigins.includes(origin)) return origin;
+      if (!origin) return corsOriginsRaw[0];
+      if (corsOriginKeys.has(originKey(origin))) return origin;
       return null;
     },
-    allowHeaders: ['Content-Type'],
+    allowHeaders: ['Content-Type', 'Accept', 'Authorization'],
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: true,
   })
