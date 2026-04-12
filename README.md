@@ -113,7 +113,7 @@ Přihlášení admina odpovídá **`ADMIN_EMAIL`** / **`ADMIN_PASSWORD`** v prom
 
 **Railway → Web → Networking:** veřejná doména musí směřovat na **stejný port**, na kterém app naslouchá — typicky proměnná **`PORT`** (často `8080`). Nenastavuj ručně **5173** (to je Vite dev); jinak uvidíš „Application failed to respond“ i při běžícím `serve`.
 
-**Menu / data nenačtená, chyba o `DOCTYPE` / „not valid JSON“:** u služby **Web** chybí nebo neplatí **`VITE_API_URL`** = celá `https://…` URL **API** služby. Bez ní prohlížeč volá `/api/...` na **doméně webu** a statický server vrátí `index.html`. Po změně proměnné musí proběhnout **nový build** webu.
+**Menu / data nenačtená, chyba o `DOCTYPE` / „not valid JSON“:** u služby **Web** musí být **`VITE_API_URL`** = celá `https://…` URL **API**. U **Dockerfile** v kořeni je navíc `ARG VITE_API_URL` / `ENV` v builder stage — Railway proměnnou předá jen do buildu, když je takto deklarovaná; jinak Vite při `npm run build` URL nezapíše do bundlu i když je proměnná v UI. Po změně **redeploy Web** (nový build).
 
 Volitelně R2 proměnné pro nahrávání dokladů — viz `api/.env.example`.
 

@@ -3,6 +3,9 @@
 
 FROM node:22-bookworm-slim AS builder
 WORKDIR /app
+# Railway předá proměnné služby jako build-args jen když tu jsou ARG — Vite je potřebuje při `npm run build`.
+ARG VITE_API_URL
+ENV VITE_API_URL=$VITE_API_URL
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
