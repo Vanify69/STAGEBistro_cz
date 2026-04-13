@@ -256,7 +256,7 @@ export default function HomePage() {
           className="text-center max-w-4xl"
         >
           <img src={LogoImage} alt="Stage Bistro" className="w-full max-w-2xl mx-auto mb-3" />
-          <p className="-mt-24 mb-3 text-2xl sm:text-3xl font-bold uppercase tracking-[0.18em] text-white">
+          <p className="-mt-10 mb-3 md:-mt-24 text-2xl sm:text-3xl font-bold uppercase tracking-[0.18em] text-white">
             STŘELECKÝ OSTROV
           </p>
           <motion.p
