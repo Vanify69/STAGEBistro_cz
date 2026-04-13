@@ -167,6 +167,9 @@ async function runMigrationsIfEnabled(): Promise<void> {
   const folder = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'drizzle');
   await migrate(d, { migrationsFolder: folder });
   await migrationClient.end({ timeout: 5 });
+
+  // Bootstrap data after migrations (idempotent seed script).
+  await import('./seed.js');
 }
 
 const port = Number(process.env.PORT ?? '3001');

@@ -8,7 +8,9 @@ import {
   menuItems,
   galleryImages,
   siteSettings,
+  headerEvents,
 } from './db/schema.js';
+import { strelakMay2026 } from './seedData/strelakMay2026.js';
 
 async function main() {
   const db = getDb();
@@ -31,6 +33,7 @@ async function main() {
   if ((catCountRow?.c ?? 0) > 0) {
     console.log('Menu already seeded, skipping menu/gallery.');
     await seedSettings(db);
+    await seedHeaderEvents(db);
     return;
   }
 
@@ -272,6 +275,7 @@ async function main() {
   ]);
 
   await seedSettings(db);
+  await seedHeaderEvents(db);
   console.log('Seed completed.');
 }
 
@@ -314,6 +318,28 @@ async function seedSettings(db: ReturnType<typeof getDb>) {
       set: { value },
     });
   }
+}
+
+async function seedHeaderEvents(db: ReturnType<typeof getDb>) {
+  const [eventsCountRow] = await db.select({ c: count() }).from(headerEvents);
+  if ((eventsCountRow?.c ?? 0) > 0) {
+    console.log('Header events already seeded, skipping.');
+    return;
+  }
+
+  await db.insert(headerEvents).values(
+    strelakMay2026.map((r, i) => ({
+      eventDate: r.eventDate,
+      timeText: r.timeText,
+      titleCz: r.titleCz,
+      titleEn: r.titleEn,
+      subtitleCz: r.subtitleCz,
+      subtitleEn: r.subtitleEn,
+      linkUrl: null,
+      sortOrder: i,
+    }))
+  );
+  console.log(`Inserted ${strelakMay2026.length} header events.`);
 }
 
 main().catch((e) => {
