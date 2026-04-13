@@ -1,6 +1,6 @@
 import './loadEnv.js';
 import bcrypt from 'bcryptjs';
-import { count, eq } from 'drizzle-orm';
+import { and, count, eq, gte, lte } from 'drizzle-orm';
 import { getDb } from './db/index.js';
 import {
   users,
@@ -321,11 +321,14 @@ async function seedSettings(db: ReturnType<typeof getDb>) {
 }
 
 async function seedHeaderEvents(db: ReturnType<typeof getDb>) {
-  const [eventsCountRow] = await db.select({ c: count() }).from(headerEvents);
-  if ((eventsCountRow?.c ?? 0) > 0) {
-    console.log('Header events already seeded, skipping.');
-    return;
-  }
+  const from = strelakMay2026[0]?.eventDate;
+  const to = strelakMay2026[strelakMay2026.length - 1]?.eventDate;
+  if (!from || !to) return;
+
+  const removed = await db
+    .delete(headerEvents)
+    .where(and(gte(headerEvents.eventDate, from), lte(headerEvents.eventDate, to)))
+    .returning({ id: headerEvents.id });
 
   await db.insert(headerEvents).values(
     strelakMay2026.map((r, i) => ({
@@ -339,7 +342,9 @@ async function seedHeaderEvents(db: ReturnType<typeof getDb>) {
       sortOrder: i,
     }))
   );
-  console.log(`Inserted ${strelakMay2026.length} header events.`);
+  console.log(
+    `Replaced header events in ${from}..${to}: removed ${removed.length}, inserted ${strelakMay2026.length}.`
+  );
 }
 
 main().catch((e) => {
