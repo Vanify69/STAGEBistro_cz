@@ -22,14 +22,81 @@ function originKey(url: string): string {
   return url.trim().replace(/\/+$/, '');
 }
 
-const corsOriginsRaw =
-  process.env.CORS_ORIGIN?.split(',').map((s) => s.trim()).filter(Boolean) ?? ['http://localhost:5173'];
+function stripEnvValue(s: string): string {
+  return s.replace(/^\uFEFF/, '').trim();
+}
+
+/**
+ * Jedna řádka originů (čárkou oddělené) z proměnné prostředí.
+ * Podporuje více názvů — když je `CORS_ORIGIN` na špatné službě, často je aspoň hostname jinde.
+ */
+function getCorsOriginsEnvRaw(): string | undefined {
+  const keys = [
+    'CORS_ORIGIN',
+    'CORS_ORIGINS',
+    'ALLOWED_ORIGINS',
+    'FRONTEND_ORIGIN',
+    'WEB_ORIGIN',
+  ] as const;
+  for (const k of keys) {
+    const v = process.env[k];
+    if (v != null && stripEnvValue(String(v))) {
+      return stripEnvValue(String(v));
+    }
+  }
+  const domain =
+    process.env.WEB_PUBLIC_DOMAIN?.trim() ||
+    process.env.FRONTEND_PUBLIC_DOMAIN?.trim();
+  if (domain) {
+    const host = stripEnvValue(domain.replace(/^https?:\/\//i, '').replace(/\/+$/, ''));
+    if (host) return `https://${host}`;
+  }
+  return undefined;
+}
+
+/** Načte CORS bezpečně (prázdný string / jen čárky → localhost výchozí). */
+function parseCorsOrigins(): string[] {
+  const raw = getCorsOriginsEnvRaw();
+  if (raw == null || !raw) {
+    return ['http://localhost:5173'];
+  }
+  const list = raw
+    .split(',')
+    .map((s) => stripEnvValue(s))
+    .filter(Boolean);
+  return list.length > 0 ? list : ['http://localhost:5173'];
+}
+
+const corsOriginsRaw = parseCorsOrigins();
 const corsOriginKeys = new Set(corsOriginsRaw.map(originKey));
 
-if (process.env.RAILWAY_ENVIRONMENT && !process.env.CORS_ORIGIN?.trim()) {
-  console.warn(
-    '[cors] CORS_ORIGIN není nastavené — prohlížeč z Web domény dostane CORS chybu. Na službě API nastav CORS_ORIGIN na URL webu (https://…).'
-  );
+if (process.env.RAILWAY_ENVIRONMENT) {
+  const raw = getCorsOriginsEnvRaw();
+  const onlyLocalhost =
+    corsOriginsRaw.length === 1 && corsOriginsRaw[0]?.startsWith('http://localhost');
+
+  if (raw === undefined) {
+    console.warn(
+      '[cors] Žádná z proměnných pro origin (CORS_ORIGIN, WEB_ORIGIN, …) v tomto procesu není nastavená. Railway → vyber službu API (ne Web) → Variables → přidej CORS_ORIGIN = přesná URL webu (https://web-production-….up.railway.app) → Deploy.'
+    );
+  } else if (!raw) {
+    console.warn('[cors] CORS proměnná je prázdná — doplň URL webu včetně https://');
+  } else if (/xxxx/i.test(raw)) {
+    console.warn(
+      '[cors] Hodnota obsahuje „xxxx“ — v README je to zástupný znak. Použij skutečnou doménu z Networking u služby Web.'
+    );
+  }
+
+  if (onlyLocalhost) {
+    const related = Object.keys(process.env).filter((k) =>
+      /CORS|ORIGIN|FRONTEND|WEB_PUBLIC/i.test(k)
+    );
+    console.warn(
+      '[cors] POZOR: povolen je jen výchozí localhost — prohlížeč z Railway webu dostane CORS chybu. ' +
+        'Ověř, že proměnná je u služby, která spouští tento log (API), ne u Web. ' +
+        `Nalezené klíče prostředí s „CORS/ORIGIN/…“: ${related.length ? related.join(', ') : '(žádné)'}.`
+    );
+  }
 }
 console.log('[cors] povolené originy:', corsOriginsRaw.join(' | '));
 
