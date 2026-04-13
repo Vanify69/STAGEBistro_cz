@@ -255,12 +255,15 @@ export default function HomePage() {
           transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
           className="text-center max-w-4xl"
         >
-          <img src={LogoImage} alt="Stage Bistro" className="w-full max-w-2xl mx-auto mb-8" />
+          <img src={LogoImage} alt="Stage Bistro" className="w-full max-w-2xl mx-auto mb-3" />
+          <p className="-mt-24 mb-3 text-2xl sm:text-3xl font-bold uppercase tracking-[0.18em] text-white">
+            STŘELECKÝ OSTROV
+          </p>
           <motion.p
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3, duration: 0.6 }}
-            className="text-xl sm:text-2xl mb-12 tracking-wide font-light"
+            className="mt-16 text-xl sm:text-2xl mb-12 tracking-wide font-light"
           >
             {isLoading ? '…' : tagline}
           </motion.p>
