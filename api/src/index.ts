@@ -27,7 +27,12 @@ function stripEnvValue(s: string): string {
 }
 
 function isRailwayWebOrigin(origin: string): boolean {
-  return /^https:\/\/web-production-[a-z0-9-]+\.up\.railway\.app$/i.test(originKey(origin));
+  const key = originKey(origin);
+  return (
+    /^https:\/\/web-production-[a-z0-9-]+\.up\.railway\.app$/i.test(key) ||
+    key === 'https://www.stagebistro.cz' ||
+    key === 'https://stagebistro.cz'
+  );
 }
 
 /**
@@ -105,7 +110,7 @@ if (process.env.RAILWAY_ENVIRONMENT) {
         `Nalezené klíče prostředí s „CORS/ORIGIN/…“: ${related.length ? related.join(', ') : '(žádné)'}.`
     );
     console.warn(
-      '[cors] Dočasný fallback aktivní: povolím origin ve tvaru https://web-production-*.up.railway.app, dokud Railway nepředává CORS_ORIGIN do runtime.'
+      '[cors] Dočasný fallback aktivní: povolím origin https://www.stagebistro.cz, https://stagebistro.cz a také https://web-production-*.up.railway.app, dokud Railway nepředává CORS_ORIGIN do runtime.'
     );
   }
 }
