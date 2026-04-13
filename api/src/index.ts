@@ -26,6 +26,10 @@ function stripEnvValue(s: string): string {
   return s.replace(/^\uFEFF/, '').trim();
 }
 
+function isRailwayWebOrigin(origin: string): boolean {
+  return /^https:\/\/web-production-[a-z0-9-]+\.up\.railway\.app$/i.test(originKey(origin));
+}
+
 /**
  * Jedna řádka originů (čárkou oddělené) z proměnné prostředí.
  * Podporuje více názvů — když je `CORS_ORIGIN` na špatné službě, často je aspoň hostname jinde.
@@ -69,6 +73,10 @@ function parseCorsOrigins(): string[] {
 
 const corsOriginsRaw = parseCorsOrigins();
 const corsOriginKeys = new Set(corsOriginsRaw.map(originKey));
+const isRailwayFallbackMode =
+  !!process.env.RAILWAY_ENVIRONMENT &&
+  corsOriginsRaw.length === 1 &&
+  corsOriginsRaw[0] === 'http://localhost:5173';
 
 if (process.env.RAILWAY_ENVIRONMENT) {
   const raw = getCorsOriginsEnvRaw();
@@ -96,6 +104,9 @@ if (process.env.RAILWAY_ENVIRONMENT) {
         'Ověř, že proměnná je u služby, která spouští tento log (API), ne u Web. ' +
         `Nalezené klíče prostředí s „CORS/ORIGIN/…“: ${related.length ? related.join(', ') : '(žádné)'}.`
     );
+    console.warn(
+      '[cors] Dočasný fallback aktivní: povolím origin ve tvaru https://web-production-*.up.railway.app, dokud Railway nepředává CORS_ORIGIN do runtime.'
+    );
   }
 }
 console.log('[cors] povolené originy:', corsOriginsRaw.join(' | '));
@@ -109,7 +120,10 @@ const CORS_ALLOW_METHODS = 'GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS';
 
 const corsMiddleware: MiddlewareHandler = async (c, next) => {
   const origin = c.req.header('Origin');
-  const allowed = origin && corsOriginKeys.has(originKey(origin)) ? origin : undefined;
+  const byConfig = origin && corsOriginKeys.has(originKey(origin)) ? origin : undefined;
+  const byRailwayFallback =
+    origin && isRailwayFallbackMode && isRailwayWebOrigin(origin) ? origin : undefined;
+  const allowed = byConfig ?? byRailwayFallback;
 
   if (c.req.method === 'OPTIONS') {
     if (allowed) {
