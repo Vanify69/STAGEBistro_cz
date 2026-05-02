@@ -13,7 +13,29 @@ import { adminRouter } from './routes/admin.js';
 import { provozRouter } from './routes/provoz.js';
 import { ucetniRouter } from './routes/ucetni.js';
 
+function formatApiError(err: unknown): string {
+  if (err instanceof AggregateError) {
+    const parts = err.errors.map((e) => (e instanceof Error ? e.message : String(e))).filter(Boolean);
+    return parts.length ? parts.join(' | ') : 'AggregateError (detail v logu API)';
+  }
+  if (err instanceof Error && err.message) return err.message;
+  if (err instanceof Error) return err.name || 'Error';
+  return String(err);
+}
+
 const app = new Hono();
+
+app.onError((err, c) => {
+  console.error('[api]', err);
+  let message = formatApiError(err);
+  if (message.includes('DATABASE_URL')) {
+    message = 'DATABASE_URL chybí v prostředí API (soubor api/.env nebo Railway Variables).';
+  } else if (message.includes('ECONNREFUSED')) {
+    message =
+      'Nepřipojena databáze (Postgres neběží nebo nesedí host/port proti DATABASE_URL; lokálně obvykle `npm run db:up`).';
+  }
+  return c.json({ error: message }, 500);
+});
 
 app.get('/health', (c) => c.json({ ok: true }));
 

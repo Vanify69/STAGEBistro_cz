@@ -13,7 +13,7 @@ if (!fs.existsSync(example)) {
 
 if (!fs.existsSync(target)) {
   fs.copyFileSync(example, target);
-  console.log('Created api/.env from api/.env.example (Docker Postgres on localhost:5433).');
+  console.log('Created api/.env from api/.env.example (Docker Postgres na 127.0.0.1:5433).');
 } else {
   // quiet when already present
 }

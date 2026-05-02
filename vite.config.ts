@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import path from 'path'
+import { tmpdir } from 'node:os'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 
@@ -17,6 +18,8 @@ function figmaAssetResolver() {
 }
 
 export default defineConfig({
+  // Projekt v Dropboxu zamyká `node_modules/.vite` → EBUSY při optimalizaci závislostí.
+  cacheDir: path.join(tmpdir(), 'vite-cache-stagebistro-cz'),
   server: {
     proxy: {
       '/api': {

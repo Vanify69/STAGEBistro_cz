@@ -11,7 +11,7 @@ import {
 } from '../db/schema.js';
 import type { AuthUser } from '../lib/session.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { normalizeMapEmbedSettingValue } from '../lib/mapEmbedUrl.js';
+import { resolveMapEmbedUrlForSite } from '../lib/mapEmbedUrl.js';
 
 export const adminRouter = new Hono<{ Variables: { user: AuthUser } }>();
 
@@ -29,9 +29,9 @@ adminRouter.get('/settings', async (c) => {
       settings[row.key] = row.value;
     }
   }
-  if ('map.embedUrl' in settings) {
-    settings['map.embedUrl'] = normalizeMapEmbedSettingValue(settings['map.embedUrl']);
-  }
+  settings['map.embedUrl'] = resolveMapEmbedUrlForSite(
+    'map.embedUrl' in settings ? settings['map.embedUrl'] : ''
+  );
   return c.json({ settings });
 });
 
@@ -45,7 +45,7 @@ adminRouter.patch('/settings', async (c) => {
   if (!parsed.success) return c.json({ error: 'Invalid body' }, 400);
   const db = getDb();
   for (const [key, val] of Object.entries(parsed.data.settings)) {
-    const normalizedVal = key === 'map.embedUrl' ? normalizeMapEmbedSettingValue(val) : val;
+    const normalizedVal = key === 'map.embedUrl' ? resolveMapEmbedUrlForSite(val) : val;
     // Always JSON-serialize so strings (e.g. IČ) are not stored as bare digits
     // (which JSON.parse would read back as numbers and break admin JSON + strSetting).
     const value = JSON.stringify(normalizedVal);

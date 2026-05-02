@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useLocation } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'motion/react';
 import { format, parseISO } from 'date-fns';
@@ -28,13 +28,11 @@ const ui = {
     menuBtn: 'Menu',
     findBtn: 'Kde nás najdeš',
     menuTitle: 'Menu',
-    qrText: 'Naskenuj QR pro menu v mobilu',
     aboutTitle: 'O nás',
     locationTitle: 'Kde nás najdeš',
     getDirections: 'Navigovat',
     legalTitle: 'Provozovatel',
     emailLabel: 'Email',
-    allergensNote: 'Alergeny na vyžádání / QR',
     allergensLabel: 'Alergeny',
     eventsTitle: 'Naše akce',
     eventsSubtitle: 'Potkejte nás na různých místech v Praze',
@@ -48,13 +46,11 @@ const ui = {
     menuBtn: 'Menu',
     findBtn: 'Find us',
     menuTitle: 'Menu',
-    qrText: 'Scan QR for mobile menu',
     aboutTitle: 'About',
     locationTitle: 'Find us',
     getDirections: 'Get directions',
     legalTitle: 'Operator',
     emailLabel: 'Email',
-    allergensNote: 'Allergens on request / QR',
     allergensLabel: 'Allergens',
     eventsTitle: 'Our Events',
     eventsSubtitle: 'Find us at various locations in Prague',
@@ -160,6 +156,7 @@ export default function HomePage() {
   const [lang, setLang] = useState<Language>('cz');
   const menuRef = useRef<HTMLDivElement>(null);
   const locationRef = useRef<HTMLDivElement>(null);
+  const routeLocation = useLocation();
   const t = ui[lang];
 
   const { data, isLoading, isError, error } = useQuery({
@@ -208,8 +205,33 @@ export default function HomePage() {
   }, [data, lang]);
 
   const scrollToSection = (ref: React.RefObject<HTMLDivElement | null>) => {
-    ref.current?.scrollIntoView({ behavior: 'smooth' });
+    ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
+
+  // QR / odkaz …/#menu — stejný scroll jako při kliknutí na „Menu“ (po načtení obsahu sekce).
+  useEffect(() => {
+    if (routeLocation.hash !== '#menu') return;
+
+    let cancelled = false;
+    const run = () => {
+      if (cancelled) return;
+      const el = menuRef.current;
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+
+    if (isLoading) return () => {
+      cancelled = true;
+    };
+
+    const id = window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(run);
+    });
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(id);
+    };
+  }, [routeLocation.hash, isLoading, data]);
 
   return (
     <div className="min-h-screen bg-white text-black">
@@ -322,7 +344,11 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section ref={menuRef} className="py-20 sm:py-32 bg-white">
+      <section
+        ref={menuRef}
+        id="menu"
+        className="scroll-mt-[5.5rem] bg-white pb-12 pt-20 sm:pb-[4.8rem] sm:pt-32 md:scroll-mt-24"
+      >
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -366,26 +392,10 @@ export default function HomePage() {
               </div>
             );
           })}
-
-          <div className="text-center text-sm text-black/60 mb-12">
-            <p>{t.allergensNote}</p>
-          </div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="mt-12 text-center border border-black/10 p-12"
-          >
-            <div className="w-32 h-32 bg-black/5 mx-auto mb-6 flex items-center justify-center">
-              <div className="text-xs text-black/40">[QR CODE]</div>
-            </div>
-            <p className="text-sm tracking-wide text-black/60">{t.qrText}</p>
-          </motion.div>
         </div>
       </section>
 
-      <section className="py-20 sm:py-32 bg-white">
+      <section className="bg-white pb-20 pt-12 sm:pb-32 sm:pt-[4.8rem]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div
             initial={{ opacity: 0, y: 20 }}

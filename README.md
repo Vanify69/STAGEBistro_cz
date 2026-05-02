@@ -15,11 +15,13 @@ Při `npm run all` běží proces z **kořene monorepa** — obyčejné `dotenv`
 
 ### Kroky
 
-1. **PostgreSQL** — buď vlastní instance, nebo Docker (potřebuješ nainstalovaný Docker Desktop):
+1. **PostgreSQL** — buď vlastní instance, nebo Docker (**na Windows musí reálně běžet aplikace Docker Desktop**, jinak `npm run db:up` ani kontejner nenaskočí a API bez DB vrací 500).
 
 ```bash
 npm run db:up
 ```
+
+Příkaz `npm run all` před startem zkontroluje, že Postgres z `DATABASE_URL` odpovídá na portu; pokud ne, vypiše nápovědu a **nespustí** dev servery (`SKIP_DB_PREFLIGHT=1 npm run all` jen výjimečně).
 
 Výchozí přihlašovací údaje v `api/.env.example` odpovídají tomu kontejneru (`postgres` / `postgres`, DB `stagebistro`). Kontejner je z hostu na portu **`5433`** (`5433:5432`), aby nekolidoval s případnou vlastní instalací Postgresu na `:5432`.
 

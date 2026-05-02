@@ -7,7 +7,7 @@
     "api"
   ],
   "scripts": {
-    "all": "node scripts/ensure-api-env.mjs && concurrently -n api,web -c blue,green \"npm run api:dev\" \"npm run dev\"",
+    "all": "node scripts/ensure-api-env.mjs && node scripts/check-postgres.mjs && concurrently -n api,web -c blue,green \"npm run api:dev\" \"npm run dev\"",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "api:env": "node scripts/ensure-api-env.mjs",

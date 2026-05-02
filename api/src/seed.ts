@@ -11,6 +11,7 @@ import {
   headerEvents,
 } from './db/schema.js';
 import { strelakMay2026 } from './seedData/strelakMay2026.js';
+import { CANONICAL_STRELECKY_EMBED_URL } from './lib/mapEmbedUrl.js';
 
 async function main() {
   const db = getDb();
@@ -302,12 +303,7 @@ async function seedSettings(db: ReturnType<typeof getDb>) {
     ['legal.ico', JSON.stringify('12345678')],
     ['legal.address', JSON.stringify('Střelecký ostrov, 110 00 Praha 1')],
     ['legal.email', JSON.stringify('info@stagebistro.cz')],
-    [
-      'map.embedUrl',
-      JSON.stringify(
-        'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2560.284102763644!2d14.409968499999996!3d50.0809675!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x470b94faea108a65%3A0x2976fda7e2980053!2sSt%C5%99eleck%C3%BD%20ostrov%2C%20110%2000%20Praha%201!5e0!3m2!1scs!2scz!4v1775945747459!5m2!1scs!2scz'
-      ),
-    ],
+    ['map.embedUrl', JSON.stringify(CANONICAL_STRELECKY_EMBED_URL)],
     ['social.instagram', JSON.stringify('https://instagram.com/stagebistro')],
     ['social.facebook', JSON.stringify('https://facebook.com/stagebistro')],
     ['social.mapsQuery', JSON.stringify('https://maps.google.com/?q=Střelecký+ostrov+Praha')],
