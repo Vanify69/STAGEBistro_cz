@@ -4,18 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import { motion } from 'motion/react';
 import { format, parseISO } from 'date-fns';
 import { cs, enUS } from 'date-fns/locale';
-import {
-  Instagram,
-  Facebook,
-  ChevronDown,
-  Beef,
-  Sandwich,
-  Star,
-  Wheat,
-  IceCream,
-  Plus,
-  Soup,
-} from 'lucide-react';
+import { Instagram, Facebook, ChevronDown, Star } from 'lucide-react';
+import { getMenuCategoryIcon } from '@/lib/menuIcons';
 import LogoImage from '../imports/Logo_web.png';
 import { apiFetch } from '@/lib/api';
 import type { PublicSitePayload } from '@/types/publicSite';
@@ -131,27 +121,6 @@ function HeaderEventMarquee({ text }: { text: string }) {
   );
 }
 
-function categoryIcon(slug: string) {
-  switch (slug) {
-    case 'burgers':
-      return Beef;
-    case 'hotdogs':
-      return Soup;
-    case 'sandwiches':
-      return Sandwich;
-    case 'special':
-      return Star;
-    case 'sides':
-      return Wheat;
-    case 'sweets':
-      return IceCream;
-    case 'addons':
-      return Plus;
-    default:
-      return Star;
-  }
-}
-
 export default function HomePage() {
   const [lang, setLang] = useState<Language>('cz');
   const menuRef = useRef<HTMLDivElement>(null);
@@ -179,6 +148,7 @@ export default function HomePage() {
   const ico = strSetting(settings, 'legal.ico', '12345678');
   const address = strSetting(settings, 'legal.address', 'Střelecký ostrov, 110 00 Praha 1');
   const email = strSetting(settings, 'legal.email', 'info@stagebistro.cz');
+  const menuHeroImage = strSetting(settings, 'menu.heroImageUrl', '');
 
   const headerLine = useMemo(() => {
     const ev = data?.headerEventsToday?.[0];
@@ -361,6 +331,18 @@ export default function HomePage() {
             <div className="w-24 h-px bg-black mx-auto" />
           </motion.div>
 
+          {menuHeroImage && (
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.5 }}
+              className="mb-12 max-w-3xl mx-auto aspect-[21/9] overflow-hidden bg-black/5"
+            >
+              <img src={menuHeroImage} alt="" className="w-full h-full object-cover" />
+            </motion.div>
+          )}
+
           {isError && (
             <p className="text-center text-red-600 mb-8">
               {(error as Error).message}
@@ -368,10 +350,15 @@ export default function HomePage() {
           )}
 
           {(data?.menu ?? []).map((cat) => {
-            const Icon = categoryIcon(cat.slug);
+            const Icon = getMenuCategoryIcon(cat.iconKey);
             const catName = lang === 'cz' ? cat.nameCz : cat.nameEn;
             return (
               <div key={cat.id} className="mb-16">
+                {cat.imageUrl && (
+                  <div className="mb-6 max-h-48 overflow-hidden bg-black/5">
+                    <img src={cat.imageUrl} alt="" className="w-full h-full object-cover max-h-48" />
+                  </div>
+                )}
                 <h3 className="text-2xl sm:text-3xl mb-8 tracking-tight flex items-center gap-3">
                   <Icon className="w-8 h-8" />
                   {catName}

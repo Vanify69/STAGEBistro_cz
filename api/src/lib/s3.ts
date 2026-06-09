@@ -36,3 +36,12 @@ export async function presignPutObject(key: string, contentType: string): Promis
   });
   return getSignedUrl(client, cmd, { expiresIn: 900 });
 }
+
+/** Veřejná URL nahraného souboru (R2_PUBLIC_BASE_URL + key). */
+export function publicUrlForStorageKey(key: string): string {
+  const base = process.env.R2_PUBLIC_BASE_URL?.replace(/\/+$/, '');
+  if (!base) {
+    throw new Error('R2_PUBLIC_BASE_URL is not configured');
+  }
+  return `${base}/${key.replace(/^\//, '')}`;
+}

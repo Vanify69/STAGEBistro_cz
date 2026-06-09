@@ -43,6 +43,8 @@ export const menuCategories = pgTable('menu_category', {
   sortOrder: integer('sort_order').notNull().default(0),
   nameCz: text('name_cz').notNull(),
   nameEn: text('name_en').notNull(),
+  iconKey: text('icon_key').notNull().default('star'),
+  imageUrl: text('image_url'),
   active: boolean('active').notNull().default(true),
 });
 

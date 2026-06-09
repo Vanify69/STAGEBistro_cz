@@ -12,6 +12,7 @@ import {
 } from './db/schema.js';
 import { strelakMay2026 } from './seedData/strelakMay2026.js';
 import { CANONICAL_STRELECKY_EMBED_URL } from './lib/mapEmbedUrl.js';
+import { iconKeyFromCategorySlug } from './lib/menuIconKeys.js';
 
 async function main() {
   const db = getDb();
@@ -38,17 +39,24 @@ async function main() {
     return;
   }
 
+  const categoryDefs = [
+    { slug: 'burgers', sortOrder: 0, nameCz: 'Burgery', nameEn: 'Burgers' },
+    { slug: 'hotdogs', sortOrder: 1, nameCz: 'Hot Dogs', nameEn: 'Hot Dogs' },
+    { slug: 'sandwiches', sortOrder: 2, nameCz: 'Sendviče', nameEn: 'Sandwiches' },
+    { slug: 'special', sortOrder: 3, nameCz: 'Special', nameEn: 'Special' },
+    { slug: 'sides', sortOrder: 4, nameCz: 'Přílohy', nameEn: 'Sides' },
+    { slug: 'sweets', sortOrder: 5, nameCz: 'Sladké', nameEn: 'Sweets' },
+    { slug: 'addons', sortOrder: 6, nameCz: 'Doplňky', nameEn: 'Add-ons' },
+  ] as const;
+
   const cats = await db
     .insert(menuCategories)
-    .values([
-      { slug: 'burgers', sortOrder: 0, nameCz: 'Burgery', nameEn: 'Burgers' },
-      { slug: 'hotdogs', sortOrder: 1, nameCz: 'Hot Dogs', nameEn: 'Hot Dogs' },
-      { slug: 'sandwiches', sortOrder: 2, nameCz: 'Sendviče', nameEn: 'Sandwiches' },
-      { slug: 'special', sortOrder: 3, nameCz: 'Special', nameEn: 'Special' },
-      { slug: 'sides', sortOrder: 4, nameCz: 'Přílohy', nameEn: 'Sides' },
-      { slug: 'sweets', sortOrder: 5, nameCz: 'Sladké', nameEn: 'Sweets' },
-      { slug: 'addons', sortOrder: 6, nameCz: 'Doplňky', nameEn: 'Add-ons' },
-    ])
+    .values(
+      categoryDefs.map((c) => ({
+        ...c,
+        iconKey: iconKeyFromCategorySlug(c.slug),
+      }))
+    )
     .returning();
 
   const bySlug = Object.fromEntries(cats.map((c) => [c.slug, c.id])) as Record<string, string>;

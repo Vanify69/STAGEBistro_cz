@@ -12,6 +12,8 @@ import {
 import type { AuthUser } from '../lib/session.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { resolveMapEmbedUrlForSite } from '../lib/mapEmbedUrl.js';
+import { isR2Configured, presignPutObject, publicUrlForStorageKey } from '../lib/s3.js';
+import { DEFAULT_MENU_ICON_KEY, MENU_ICON_KEYS } from '../lib/menuIconKeys.js';
 
 export const adminRouter = new Hono<{ Variables: { user: AuthUser } }>();
 
@@ -57,11 +59,15 @@ adminRouter.patch('/settings', async (c) => {
   return c.json({ ok: true });
 });
 
+const menuIconKeySchema = z.enum(MENU_ICON_KEYS);
+
 const categorySchema = z.object({
   slug: z.string().min(1),
   sortOrder: z.number().int().optional(),
   nameCz: z.string().min(1),
   nameEn: z.string().min(1),
+  iconKey: menuIconKeySchema.optional(),
+  imageUrl: z.string().nullable().optional(),
   active: z.boolean().optional(),
 });
 
@@ -83,6 +89,8 @@ adminRouter.post('/menu/categories', async (c) => {
       sortOrder: parsed.data.sortOrder ?? 0,
       nameCz: parsed.data.nameCz,
       nameEn: parsed.data.nameEn,
+      iconKey: parsed.data.iconKey ?? DEFAULT_MENU_ICON_KEY,
+      imageUrl: parsed.data.imageUrl ?? null,
       active: parsed.data.active ?? true,
     })
     .returning();
@@ -173,6 +181,32 @@ adminRouter.delete('/menu/items/:id', async (c) => {
   const db = getDb();
   await db.delete(menuItems).where(eq(menuItems.id, id));
   return c.json({ ok: true });
+});
+
+const uploadPresignSchema = z.object({
+  purpose: z.enum(['menu-item', 'menu-category', 'menu-hero']),
+  mime: z.string().min(3),
+});
+
+adminRouter.post('/uploads/presign', async (c) => {
+  if (!isR2Configured()) {
+    return c.json({ error: 'Nahrávání není nakonfigurováno (R2)' }, 503);
+  }
+  if (!process.env.R2_PUBLIC_BASE_URL?.trim()) {
+    return c.json({ error: 'Chybí R2_PUBLIC_BASE_URL pro veřejné URL obrázků' }, 503);
+  }
+  const body = await c.req.json().catch(() => null);
+  const parsed = uploadPresignSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: 'Invalid body' }, 400);
+  const mime = parsed.data.mime;
+  if (!mime.startsWith('image/')) {
+    return c.json({ error: 'Podporovány jsou jen obrázky' }, 400);
+  }
+  const ext = mime.split('/')[1]?.replace('jpeg', 'jpg') ?? 'bin';
+  const storageKey = `stagebistro/${parsed.data.purpose}/${crypto.randomUUID()}.${ext}`;
+  const uploadUrl = await presignPutObject(storageKey, mime);
+  const publicUrl = publicUrlForStorageKey(storageKey);
+  return c.json({ uploadUrl, publicUrl, storageKey });
 });
 
 const gallerySchema = z.object({

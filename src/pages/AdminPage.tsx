@@ -7,6 +7,7 @@ import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/components/ui/tabs';
 import { Textarea } from '@/app/components/ui/textarea';
+import { MenuAdminTab } from '@/pages/admin/MenuAdminTab';
 
 type MeResponse = { user: { id: string; email: string; role: string } | null };
 
@@ -99,18 +100,6 @@ export default function AdminPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'header-events'] }),
   });
 
-  const menuQuery = useQuery({
-    queryKey: ['admin', 'menu'],
-    queryFn: async () => {
-      const [cats, its] = await Promise.all([
-        apiFetch<{ categories: { id: string; slug: string; nameCz: string; nameEn: string }[] }>('/api/admin/menu/categories'),
-        apiFetch<{ items: { id: string; categoryId: string; nameCz: string; priceCents: number }[] }>('/api/admin/menu/items'),
-      ]);
-      return { categories: cats.categories, items: its.items };
-    },
-    enabled: me?.user?.role === 'admin',
-  });
-
   const galleryQuery = useQuery({
     queryKey: ['admin', 'gallery'],
     queryFn: () => apiFetch<{ images: { id: string; url: string }[] }>('/api/admin/gallery'),
@@ -131,7 +120,7 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-white text-black p-6 max-w-4xl mx-auto">
+    <div className="min-h-screen bg-white text-black p-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl tracking-tight">Administrace</h1>
         <div className="flex gap-2">
@@ -148,7 +137,7 @@ export default function AdminPage() {
         <TabsList className="flex flex-wrap">
           <TabsTrigger value="settings">Nastavení</TabsTrigger>
           <TabsTrigger value="events">Akce v hlavičce</TabsTrigger>
-          <TabsTrigger value="menu">Menu (přehled)</TabsTrigger>
+          <TabsTrigger value="menu">Menu</TabsTrigger>
           <TabsTrigger value="gallery">Galerie</TabsTrigger>
         </TabsList>
 
@@ -239,24 +228,8 @@ export default function AdminPage() {
           </Button>
         </TabsContent>
 
-        <TabsContent value="menu" className="mt-4 text-sm space-y-2">
-          <p className="text-black/60">Úpravy položek a kategorií přes REST API (viz README). Přehled:</p>
-          <div className="border border-black/10 rounded-md p-3 max-h-96 overflow-auto font-mono">
-            {(menuQuery.data?.categories ?? []).map((c) => (
-              <div key={c.id} className="mb-2">
-                <strong>{c.slug}</strong> — {c.nameCz}
-                <ul className="ml-4 list-disc">
-                  {(menuQuery.data?.items ?? [])
-                    .filter((i) => i.categoryId === c.id)
-                    .map((i) => (
-                      <li key={i.id}>
-                        {i.nameCz} ({Math.round(i.priceCents / 100)} Kč)
-                      </li>
-                    ))}
-                </ul>
-              </div>
-            ))}
-          </div>
+        <TabsContent value="menu">
+          <MenuAdminTab />
         </TabsContent>
 
         <TabsContent value="gallery" className="mt-4 space-y-4">

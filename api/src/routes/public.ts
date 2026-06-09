@@ -57,6 +57,8 @@ publicRouter.get('/site', publicRateLimit, async (c) => {
     slug: cat.slug,
     nameCz: cat.nameCz,
     nameEn: cat.nameEn,
+    iconKey: cat.iconKey,
+    imageUrl: cat.imageUrl,
     sortOrder: cat.sortOrder,
     items: items
       .filter((i) => i.categoryId === cat.id)

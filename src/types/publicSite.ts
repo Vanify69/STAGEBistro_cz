@@ -15,6 +15,8 @@ export type PublicMenuCategory = {
   slug: string;
   nameCz: string;
   nameEn: string;
+  iconKey: string;
+  imageUrl: string | null;
   sortOrder: number;
   items: PublicMenuItem[];
 };
