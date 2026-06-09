@@ -7,11 +7,14 @@ import type { AuthUser } from '../lib/session.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { isValidYmd } from '../lib/pragueDate.js';
 import { isR2Configured, presignPutObject } from '../lib/s3.js';
+import { provozStaffRouter } from './provozStaff.js';
 
 export const provozRouter = new Hono<{ Variables: { user: AuthUser } }>();
 
 provozRouter.use('*', requireAuth);
 provozRouter.use('*', requireRole('admin', 'provoz'));
+
+provozRouter.route('/', provozStaffRouter);
 
 const dailySchema = z.object({
   cashCents: z.number().int().min(0),

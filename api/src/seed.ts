@@ -315,6 +315,11 @@ async function seedSettings(db: ReturnType<typeof getDb>) {
     ['social.instagram', JSON.stringify('https://instagram.com/stagebistro')],
     ['social.facebook', JSON.stringify('https://facebook.com/stagebistro')],
     ['social.mapsQuery', JSON.stringify('https://maps.google.com/?q=Střelecký+ostrov+Praha')],
+    ['employer_name', JSON.stringify('Stage Gastro s.r.o.')],
+    ['employer_address', JSON.stringify('Nové sady 988/2, Staré Brno, 602 00 Brno')],
+    ['employer_ico', JSON.stringify('24973726')],
+    ['employer_signatory', JSON.stringify('jednatel')],
+    ['default_work_place', JSON.stringify('PRAHA')],
   ];
   for (const [key, value] of pairs) {
     await db.insert(siteSettings).values({ key, value }).onConflictDoUpdate({

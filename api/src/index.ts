@@ -12,6 +12,7 @@ import { authRouter } from './routes/auth.js';
 import { adminRouter } from './routes/admin.js';
 import { provozRouter } from './routes/provoz.js';
 import { ucetniRouter } from './routes/ucetni.js';
+import { dochazkaRouter } from './routes/dochazka.js';
 
 function formatApiError(err: unknown): string {
   if (err instanceof AggregateError) {
@@ -181,6 +182,7 @@ app.route('/api/auth', authRouter);
 app.route('/api/admin', adminRouter);
 app.route('/api/provoz', provozRouter);
 app.route('/api/ucetni', ucetniRouter);
+app.route('/api/dochazka', dochazkaRouter);
 
 async function runMigrationsIfEnabled(): Promise<void> {
   if (process.env.MIGRATE_ON_START !== 'true' && process.env.MIGRATE_ON_START !== '1') return;

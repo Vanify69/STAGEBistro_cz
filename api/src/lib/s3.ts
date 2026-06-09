@@ -1,4 +1,4 @@
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 export function isR2Configured(): boolean {
@@ -44,4 +44,46 @@ export function publicUrlForStorageKey(key: string): string {
     throw new Error('R2_PUBLIC_BASE_URL is not configured');
   }
   return `${base}/${key.replace(/^\//, '')}`;
+}
+
+export async function putObjectBuffer(
+  key: string,
+  body: Uint8Array,
+  contentType: string
+): Promise<void> {
+  const bucket = process.env.R2_BUCKET;
+  const client = getR2Client();
+  if (!bucket || !client) {
+    throw new Error('R2 is not configured');
+  }
+  await client.send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+    })
+  );
+}
+
+export async function getObjectBuffer(key: string): Promise<Uint8Array> {
+  const bucket = process.env.R2_BUCKET;
+  const client = getR2Client();
+  if (!bucket || !client) {
+    throw new Error('R2 is not configured');
+  }
+  const res = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+  const bytes = await res.Body?.transformToByteArray();
+  if (!bytes) throw new Error('Empty object');
+  return bytes;
+}
+
+export async function presignGetObject(key: string, expiresIn = 900): Promise<string> {
+  const bucket = process.env.R2_BUCKET;
+  const client = getR2Client();
+  if (!bucket || !client) {
+    throw new Error('R2 is not configured');
+  }
+  const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
+  return getSignedUrl(client, cmd, { expiresIn });
 }

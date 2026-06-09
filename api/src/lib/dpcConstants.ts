@@ -1,0 +1,4 @@
+export const DPC_MONTHLY_LIMIT_CENTS = 1_150_000;
+export const DPC_YEARLY_HOURS_LIMIT = 300;
+export const DPC_YEARLY_MINUTES_LIMIT = DPC_YEARLY_HOURS_LIMIT * 60;
+export const VPP_REASON_DEFAULT = 'Výplata odměny DPC';

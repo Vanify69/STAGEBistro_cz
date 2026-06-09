@@ -6,7 +6,9 @@ import {
   timestamp,
   uuid,
   date,
+  time,
   uniqueIndex,
+  primaryKey,
   pgEnum,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
@@ -14,6 +16,14 @@ import { relations } from 'drizzle-orm';
 export const roleEnum = pgEnum('user_role', ['admin', 'provoz', 'ucetni']);
 export const receiptCategoryEnum = pgEnum('receipt_category', ['nafta', 'suroviny', 'ostatni']);
 export const receiptStatusEnum = pgEnum('receipt_status', ['pending', 'booked']);
+export const workerStatusEnum = pgEnum('worker_status', [
+  'draft',
+  'contract_pending',
+  'active',
+  'inactive',
+]);
+export const attendanceStatusEnum = pgEnum('attendance_status', ['open', 'confirmed']);
+export const documentSequenceKindEnum = pgEnum('document_sequence_kind', ['vpp']);
 
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -132,4 +142,131 @@ export const menuCategoriesRelations = relations(menuCategories, ({ many }) => (
 
 export const menuItemsRelations = relations(menuItems, ({ one }) => ({
   category: one(menuCategories, { fields: [menuItems.categoryId], references: [menuCategories.id] }),
+}));
+
+export const workers = pgTable('worker', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  firstName: text('first_name').notNull(),
+  lastName: text('last_name').notNull(),
+  birthDate: date('birth_date', { mode: 'string' }),
+  address: text('address'),
+  phone: text('phone'),
+  position: text('position').notNull().default('Barista'),
+  workPlace: text('work_place').notNull().default('PRAHA'),
+  hourlyRateCents: integer('hourly_rate_cents').notNull(),
+  contractStart: date('contract_start', { mode: 'string' }),
+  contractEnd: date('contract_end', { mode: 'string' }),
+  status: workerStatusEnum('status').notNull().default('draft'),
+  contractPdfKey: text('contract_pdf_key'),
+  contractSource: text('contract_source'),
+  contractSignedAt: timestamp('contract_signed_at', { withTimezone: true }),
+  contractAccountingSeenAt: timestamp('contract_accounting_seen_at', { withTimezone: true }),
+  contractAccountingEmailedAt: timestamp('contract_accounting_emailed_at', { withTimezone: true }),
+  contractSignatureWorkerKey: text('contract_signature_worker_key'),
+  contractSignatureEmployerKey: text('contract_signature_employer_key'),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const shiftAssignments = pgTable('shift_assignment', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  workerId: uuid('worker_id')
+    .notNull()
+    .references(() => workers.id, { onDelete: 'cascade' }),
+  businessDate: date('business_date', { mode: 'string' }).notNull(),
+  plannedStart: time('planned_start').notNull(),
+  plannedEnd: time('planned_end').notNull(),
+  note: text('note'),
+  cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const attendanceRecords = pgTable(
+  'attendance_record',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    shiftAssignmentId: uuid('shift_assignment_id')
+      .notNull()
+      .references(() => shiftAssignments.id, { onDelete: 'cascade' }),
+    actualStart: timestamp('actual_start', { withTimezone: true }),
+    actualEnd: timestamp('actual_end', { withTimezone: true }),
+    workedMinutes: integer('worked_minutes'),
+    status: attendanceStatusEnum('status').notNull().default('open'),
+    confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+    confirmedBy: uuid('confirmed_by').references(() => users.id, { onDelete: 'set null' }),
+    signatureStorageKey: text('signature_storage_key'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('attendance_record_shift_assignment_id').on(t.shiftAssignmentId)]
+);
+
+export const wagePayments = pgTable('wage_payment', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  workerId: uuid('worker_id')
+    .notNull()
+    .references(() => workers.id, { onDelete: 'restrict' }),
+  vppNumber: text('vpp_number').notNull().unique(),
+  paidAt: timestamp('paid_at', { withTimezone: true }).notNull().defaultNow(),
+  amountCents: integer('amount_cents').notNull(),
+  hourlyRateCentsSnapshot: integer('hourly_rate_cents_snapshot').notNull(),
+  workedMinutesTotal: integer('worked_minutes_total').notNull(),
+  reason: text('reason').notNull().default('Výplata odměny DPC'),
+  recipientSignatureKey: text('recipient_signature_key'),
+  issuerSignatureKey: text('issuer_signature_key'),
+  pdfStorageKey: text('pdf_storage_key'),
+  note: text('note'),
+  paidBy: uuid('paid_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const wagePaymentLines = pgTable(
+  'wage_payment_line',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    wagePaymentId: uuid('wage_payment_id')
+      .notNull()
+      .references(() => wagePayments.id, { onDelete: 'cascade' }),
+    attendanceRecordId: uuid('attendance_record_id')
+      .notNull()
+      .references(() => attendanceRecords.id, { onDelete: 'restrict' }),
+  },
+  (t) => [uniqueIndex('wage_payment_line_attendance_record_id').on(t.attendanceRecordId)]
+);
+
+export const documentSequences = pgTable(
+  'document_sequence',
+  {
+    kind: documentSequenceKindEnum('kind').notNull(),
+    year: integer('year').notNull(),
+    lastNumber: integer('last_number').notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.kind, t.year] })]
+);
+
+export const workersRelations = relations(workers, ({ many }) => ({
+  shiftAssignments: many(shiftAssignments),
+  wagePayments: many(wagePayments),
+}));
+
+export const shiftAssignmentsRelations = relations(shiftAssignments, ({ one }) => ({
+  worker: one(workers, { fields: [shiftAssignments.workerId], references: [workers.id] }),
+  attendance: one(attendanceRecords, {
+    fields: [shiftAssignments.id],
+    references: [attendanceRecords.shiftAssignmentId],
+  }),
+}));
+
+export const attendanceRecordsRelations = relations(attendanceRecords, ({ one }) => ({
+  shiftAssignment: one(shiftAssignments, {
+    fields: [attendanceRecords.shiftAssignmentId],
+    references: [shiftAssignments.id],
+  }),
+}));
+
+export const wagePaymentsRelations = relations(wagePayments, ({ one, many }) => ({
+  worker: one(workers, { fields: [wagePayments.workerId], references: [workers.id] }),
+  lines: many(wagePaymentLines),
 }));
