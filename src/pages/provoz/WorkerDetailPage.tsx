@@ -142,6 +142,9 @@ export default function WorkerDetailPage() {
           birthDate: form.birthDate ?? w?.birthDate,
           address: form.address ?? w?.address,
           phone: form.phone ?? w?.phone,
+          bankAccountNumber: form.bankAccountNumber ?? w?.bankAccountNumber,
+          maidenName: form.maidenName ?? w?.maidenName,
+          healthInsurance: form.healthInsurance ?? w?.healthInsurance,
           position: form.position ?? w?.position,
           workPlace: form.workPlace ?? w?.workPlace,
           hourlyRateCents: form.hourlyRateCents ?? w?.hourlyRateCents,
@@ -287,6 +290,24 @@ export default function WorkerDetailPage() {
             defaultValue={w.phone ?? ''}
             placeholder="+420 …"
             onChange={(e) => setForm((x) => ({ ...x, phone: e.target.value || null }))}
+          />
+          <Label>Číslo účtu</Label>
+          <Input
+            defaultValue={w.bankAccountNumber ?? ''}
+            placeholder="123456789/0100"
+            onChange={(e) => setForm((x) => ({ ...x, bankAccountNumber: e.target.value || null }))}
+          />
+          <Label>Rodné příjmení</Label>
+          <Input
+            defaultValue={w.maidenName ?? ''}
+            placeholder="volitelné"
+            onChange={(e) => setForm((x) => ({ ...x, maidenName: e.target.value || null }))}
+          />
+          <Label>Zdravotní pojišťovna</Label>
+          <Input
+            defaultValue={w.healthInsurance ?? ''}
+            placeholder="např. VZP"
+            onChange={(e) => setForm((x) => ({ ...x, healthInsurance: e.target.value || null }))}
           />
           <Label>Pozice</Label>
           <Input defaultValue={w.position} onChange={(e) => setForm((x) => ({ ...x, position: e.target.value }))} />

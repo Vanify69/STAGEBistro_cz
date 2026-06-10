@@ -197,8 +197,10 @@ async function runMigrationsIfEnabled(): Promise<void> {
   await migrate(d, { migrationsFolder: folder });
   await migrationClient.end({ timeout: 5 });
 
-  // Bootstrap data after migrations (idempotent seed script).
-  await import('./seed.js');
+  // Seed jen při explicitním SEED_ON_START — nepřepisuje nastavení z adminu při každém restartu.
+  if (process.env.SEED_ON_START === 'true' || process.env.SEED_ON_START === '1') {
+    await import('./seed.js');
+  }
 }
 
 const port = Number(process.env.PORT ?? '3001');

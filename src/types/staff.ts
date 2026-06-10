@@ -7,6 +7,9 @@ export type Worker = {
   birthDate: string | null;
   address: string | null;
   phone: string | null;
+  bankAccountNumber: string | null;
+  maidenName: string | null;
+  healthInsurance: string | null;
   position: string;
   workPlace: string;
   hourlyRateCents: number;

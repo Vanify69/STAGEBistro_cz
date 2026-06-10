@@ -14,21 +14,45 @@ import { strelakMay2026 } from './seedData/strelakMay2026.js';
 import { CANONICAL_STRELECKY_EMBED_URL } from './lib/mapEmbedUrl.js';
 import { iconKeyFromCategorySlug } from './lib/menuIconKeys.js';
 
+type UserRole = 'admin' | 'provoz' | 'ucetni';
+
+async function ensureUser(
+  db: ReturnType<typeof getDb>,
+  email: string,
+  password: string,
+  role: UserRole
+): Promise<void> {
+  const emailNorm = email.trim().toLowerCase();
+  const existing = await db.select().from(users).where(eq(users.email, emailNorm)).limit(1);
+  if (!existing.length) {
+    const passwordHash = await bcrypt.hash(password, 10);
+    await db.insert(users).values({ email: emailNorm, passwordHash, role });
+    console.log(`Created ${role} user:`, emailNorm);
+    return;
+  }
+  if (existing[0]!.role !== role) {
+    console.log(`User ${emailNorm} already exists with role ${existing[0]!.role}, skipping.`);
+    return;
+  }
+  if (process.env.PROVOZ_RESET_PASSWORD === 'true' && role === 'provoz') {
+    const passwordHash = await bcrypt.hash(password, 10);
+    await db.update(users).set({ passwordHash }).where(eq(users.email, emailNorm));
+    console.log(`Reset password for ${role} user:`, emailNorm);
+    return;
+  }
+  console.log(`${role} user already exists:`, emailNorm);
+}
+
 async function main() {
   const db = getDb();
   const adminEmail = (process.env.ADMIN_EMAIL ?? 'admin@stagebistro.local').toLowerCase();
   const adminPassword = process.env.ADMIN_PASSWORD ?? 'changeme';
-  const existing = await db.select().from(users).where(eq(users.email, adminEmail)).limit(1);
-  if (!existing.length) {
-    const passwordHash = await bcrypt.hash(adminPassword, 10);
-    await db.insert(users).values({
-      email: adminEmail,
-      passwordHash,
-      role: 'admin',
-    });
-    console.log('Created admin user:', adminEmail);
-  } else {
-    console.log('Admin user already exists:', adminEmail);
+  await ensureUser(db, adminEmail, adminPassword, 'admin');
+
+  const provozEmail = process.env.PROVOZ_EMAIL?.trim();
+  const provozPassword = process.env.PROVOZ_PASSWORD;
+  if (provozEmail && provozPassword) {
+    await ensureUser(db, provozEmail, provozPassword, 'provoz');
   }
 
   const [catCountRow] = await db.select({ c: count() }).from(menuCategories);
@@ -321,12 +345,16 @@ async function seedSettings(db: ReturnType<typeof getDb>) {
     ['employer_signatory', JSON.stringify('jednatel')],
     ['default_work_place', JSON.stringify('PRAHA')],
   ];
+  let inserted = 0;
   for (const [key, value] of pairs) {
-    await db.insert(siteSettings).values({ key, value }).onConflictDoUpdate({
-      target: siteSettings.key,
-      set: { value },
-    });
+    const rows = await db
+      .insert(siteSettings)
+      .values({ key, value })
+      .onConflictDoNothing({ target: siteSettings.key })
+      .returning({ key: siteSettings.key });
+    if (rows.length) inserted++;
   }
+  console.log(`Site settings: ${inserted} nových, ${pairs.length - inserted} ponecháno (už existují).`);
 }
 
 async function seedHeaderEvents(db: ReturnType<typeof getDb>) {
@@ -334,10 +362,14 @@ async function seedHeaderEvents(db: ReturnType<typeof getDb>) {
   const to = strelakMay2026[strelakMay2026.length - 1]?.eventDate;
   if (!from || !to) return;
 
-  const removed = await db
-    .delete(headerEvents)
-    .where(and(gte(headerEvents.eventDate, from), lte(headerEvents.eventDate, to)))
-    .returning({ id: headerEvents.id });
+  const [existing] = await db
+    .select({ c: count() })
+    .from(headerEvents)
+    .where(and(gte(headerEvents.eventDate, from), lte(headerEvents.eventDate, to)));
+  if ((existing?.c ?? 0) > 0) {
+    console.log(`Header events ${from}..${to} už existují, přeskakuji.`);
+    return;
+  }
 
   await db.insert(headerEvents).values(
     strelakMay2026.map((r, i) => ({
@@ -351,9 +383,7 @@ async function seedHeaderEvents(db: ReturnType<typeof getDb>) {
       sortOrder: i,
     }))
   );
-  console.log(
-    `Replaced header events in ${from}..${to}: removed ${removed.length}, inserted ${strelakMay2026.length}.`
-  );
+  console.log(`Inserted ${strelakMay2026.length} header events (${from}..${to}).`);
 }
 
 main().catch((e) => {

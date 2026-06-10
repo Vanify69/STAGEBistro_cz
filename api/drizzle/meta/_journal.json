@@ -43,6 +43,13 @@
       "when": 1757548800000,
       "tag": "0005_contract_accounting_email",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1760140800000,
+      "tag": "0006_worker_bank_insurance",
+      "breakpoints": true
     }
   ]
 }
