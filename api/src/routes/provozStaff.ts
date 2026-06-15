@@ -12,7 +12,7 @@ import {
 import type { AuthUser } from '../lib/session.js';
 import { isValidYmd } from '../lib/pragueDate.js';
 import { isR2Configured, presignPutObject } from '../lib/s3.js';
-import { getStorageBuffer, parseDataUrl, publicUrlForKey, putStorageBuffer } from '../lib/storage.js';
+import { parseDataUrl, publicUrlForKey, putStorageBuffer } from '../lib/storage.js';
 import { getEmployerSettings } from '../lib/employerSettings.js';
 import { buildContractDpcPdf, buildContractDpcPdfForWorker } from '../lib/pdf/contractDpc.js';
 import { asciiFilename } from '../lib/pdf/pdfText.js';
@@ -31,7 +31,12 @@ import {
   minutesToAmountCents,
 } from '../lib/workedMinutes.js';
 import { buildMonthCalendar } from '../lib/staffCalendar.js';
-import { CONTRACT_SCAN_MIMES, extForContractMime, mimeForContractKey } from '../lib/contractFile.js';
+import {
+  contractFileResponseHeaders,
+  persistWorkerContractPdf,
+  resolveWorkerContractFile,
+} from '../lib/contractStorage.js';
+import { CONTRACT_SCAN_MIMES, extForContractMime } from '../lib/contractFile.js';
 import { notifyAccountingOfContract } from '../lib/contractAccountingNotify.js';
 import { confirmPlannedAttendance, listUnconfirmedShifts } from '../lib/attendanceConfirm.js';
 import {
@@ -223,29 +228,24 @@ provozStaffRouter.post('/workers/:id/contract/generate', async (c) => {
   }
 });
 
-async function persistWorkerContractPdf(worker: typeof workers.$inferSelect): Promise<string> {
-  const pdf = await buildContractDpcPdfForWorker(worker);
-  const key =
-    worker.contractPdfKey ?? `stagebistro/workers/${worker.id}/contract/${crypto.randomUUID()}.pdf`;
-  await putStorageBuffer(key, pdf, 'application/pdf');
-  return key;
-}
-
 provozStaffRouter.get('/workers/:id/contract/file', async (c) => {
   const id = c.req.param('id');
   const db = getDb();
   const [worker] = await db.select().from(workers).where(eq(workers.id, id)).limit(1);
-  if (!worker?.contractPdfKey) return c.json({ error: 'Not found' }, 404);
+  if (!worker) return c.json({ error: 'Not found' }, 404);
 
-  const buf = await getStorageBuffer(worker.contractPdfKey);
-  if (!buf) return c.json({ error: 'Soubor smlouvy nenalezen' }, 404);
+  const result = await resolveWorkerContractFile(worker);
+  if (!result.ok) return c.json({ error: result.error }, result.status);
 
-  const mime = mimeForContractKey(worker.contractPdfKey);
-  return new Response(Buffer.from(buf), {
-    headers: {
-      'Content-Type': mime,
-      'Content-Disposition': `inline; filename="smlouva-dpc-${asciiFilename(worker.lastName)}.${worker.contractPdfKey.split('.').pop()}"`,
-    },
+  if (result.newPdfKey) {
+    await db
+      .update(workers)
+      .set({ contractPdfKey: result.newPdfKey, updatedAt: new Date() })
+      .where(eq(workers.id, id));
+  }
+
+  return new Response(Buffer.from(result.buf), {
+    headers: contractFileResponseHeaders(worker, result),
   });
 });
 
@@ -354,7 +354,6 @@ provozStaffRouter.post('/workers/:id/contract/sign-worker', async (c) => {
       contractSignedAt: signedAt,
       contractSource: 'generated',
       contractAccountingSeenAt: null,
-      status: 'active',
       updatedAt: new Date(),
     })
     .where(eq(workers.id, id))
@@ -362,16 +361,16 @@ provozStaffRouter.post('/workers/:id/contract/sign-worker', async (c) => {
   if (!row) return c.json({ error: 'Not found' }, 404);
 
   try {
-    const pdfKey = await persistWorkerContractPdf(row);
-    const [updated] = await db
+    const { key: pdfKey } = await persistWorkerContractPdf(row);
+    const [finalWorker] = await db
       .update(workers)
-      .set({ contractPdfKey: pdfKey, updatedAt: new Date() })
+      .set({ contractPdfKey: pdfKey, status: 'active', updatedAt: new Date() })
       .where(eq(workers.id, id))
       .returning();
-    const finalWorker = updated ?? row;
-    const mail = await notifyAccountingOfContract(finalWorker);
+    const worker = finalWorker ?? row;
+    const mail = await notifyAccountingOfContract(worker);
     return c.json({
-      worker: serializeWorker(finalWorker),
+      worker: serializeWorker(worker),
       accountingQueued: true,
       accountingEmailed: mail.emailed,
     });

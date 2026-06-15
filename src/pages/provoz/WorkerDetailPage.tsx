@@ -29,6 +29,7 @@ export default function WorkerDetailPage() {
   const [editAttTimes, setEditAttTimes] = useState<Record<string, { start: string; end: string }>>({});
   const [editingUnconfirmedId, setEditingUnconfirmedId] = useState<string | null>(null);
   const [editingUnpaidId, setEditingUnpaidId] = useState<string | null>(null);
+  const [contractMsg, setContractMsg] = useState<string | null>(null);
 
   const workerQ = useQuery({
     queryKey: ['provoz', 'worker', id],
@@ -238,25 +239,38 @@ export default function WorkerDetailPage() {
   });
 
   const openContractPdf = async () => {
+    setContractMsg(null);
     const base = getApiBase();
-    const useStored =
-      w?.contractSource === 'scan' || (w?.status === 'active' && Boolean(w?.contractPdfKey));
-    const path = useStored
+    const useFileEndpoint =
+      w?.contractSource === 'scan' ||
+      w?.status === 'active' ||
+      Boolean(w?.contractPdfKey);
+    const path = useFileEndpoint
       ? `/api/provoz/workers/${id}/contract/file`
       : `/api/provoz/workers/${id}/contract/pdf`;
-    const res = await fetch(`${base}${path}`, { credentials: 'include' });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error((err as { error?: string }).error ?? 'PDF nelze otevřít');
+    try {
+      const res = await fetch(`${base}${path}`, { credentials: 'include' });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error((err as { error?: string }).error ?? 'PDF nelze otevřít');
+      }
+      if (res.headers.get('X-Contract-Regenerated') === '1') {
+        setContractMsg('Smlouva v úložišti chyběla — byla znovu vygenerována z uloženého podpisu.');
+        qc.invalidateQueries({ queryKey: ['provoz', 'worker', id] });
+      }
+      const blob = await res.blob();
+      window.open(URL.createObjectURL(blob), '_blank');
+    } catch (e) {
+      setContractMsg(e instanceof Error ? e.message : 'PDF nelze otevřít');
     }
-    const blob = await res.blob();
-    window.open(URL.createObjectURL(blob), '_blank');
   };
 
   if (workerQ.isLoading || !w) return <p className="text-sm text-black/60">Načítání…</p>;
 
   const f = { ...w, ...form };
-  const canDownloadContract = Boolean(w.contractPdfKey || w.status === 'contract_pending');
+  const canDownloadContract = Boolean(
+    w.contractPdfKey || w.status === 'contract_pending' || (w.status === 'active' && w.contractSignedAt)
+  );
 
   return (
     <div className="space-y-8 max-w-xl">
@@ -353,6 +367,11 @@ export default function WorkerDetailPage() {
           <Button type="button" variant="link" className="h-auto p-0 text-sm" onClick={() => void openContractPdf()}>
             Stáhnout / zobrazit smlouvu PDF
           </Button>
+        )}
+        {contractMsg && (
+          <p className={`text-sm ${contractMsg.includes('chyběla') ? 'text-amber-700' : 'text-red-600'}`}>
+            {contractMsg}
+          </p>
         )}
         {w.contractPdfUrl && (
           <a href={w.contractPdfUrl} target="_blank" rel="noreferrer" className="text-sm underline block">

@@ -4,9 +4,10 @@ import { getDb } from '../db/index.js';
 import { expenseReceipts, wagePayments, workers } from '../db/schema.js';
 import type { AuthUser } from '../lib/session.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { mimeForContractKey } from '../lib/contractFile.js';
-import { asciiFilename } from '../lib/pdf/pdfText.js';
-import { getStorageBuffer } from '../lib/storage.js';
+import {
+  contractFileResponseHeaders,
+  resolveWorkerContractFile,
+} from '../lib/contractStorage.js';
 import { presignGetObject } from '../lib/s3.js';
 
 export const ucetniRouter = new Hono<{ Variables: { user: AuthUser } }>();
@@ -96,17 +97,20 @@ ucetniRouter.get('/contracts/:workerId/file', async (c) => {
   const workerId = c.req.param('workerId');
   const db = getDb();
   const [worker] = await db.select().from(workers).where(eq(workers.id, workerId)).limit(1);
-  if (!worker?.contractPdfKey) return c.json({ error: 'Not found' }, 404);
+  if (!worker) return c.json({ error: 'Not found' }, 404);
 
-  const buf = await getStorageBuffer(worker.contractPdfKey);
-  if (!buf) return c.json({ error: 'Soubor smlouvy nenalezen' }, 404);
+  const result = await resolveWorkerContractFile(worker);
+  if (!result.ok) return c.json({ error: result.error }, result.status);
 
-  const mime = mimeForContractKey(worker.contractPdfKey);
-  return new Response(Buffer.from(buf), {
-    headers: {
-      'Content-Type': mime,
-      'Content-Disposition': `inline; filename="smlouva-dpc-${asciiFilename(worker.lastName)}.${worker.contractPdfKey.split('.').pop()}"`,
-    },
+  if (result.newPdfKey) {
+    await db
+      .update(workers)
+      .set({ contractPdfKey: result.newPdfKey, updatedAt: new Date() })
+      .where(eq(workers.id, workerId));
+  }
+
+  return new Response(Buffer.from(result.buf), {
+    headers: contractFileResponseHeaders(worker, result),
   });
 });
 
