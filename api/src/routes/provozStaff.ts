@@ -35,6 +35,7 @@ import {
   contractFileResponseHeaders,
   persistWorkerContractPdf,
   resolveWorkerContractFile,
+  workerHasStoredSignature,
 } from '../lib/contractStorage.js';
 import { CONTRACT_SCAN_MIMES, extForContractMime } from '../lib/contractFile.js';
 import { notifyAccountingOfContract } from '../lib/contractAccountingNotify.js';
@@ -80,7 +81,10 @@ const shiftSchema = z.object({
   note: z.string().nullable().optional(),
 });
 
-function serializeWorker(w: typeof workers.$inferSelect) {
+function serializeWorker(
+  w: typeof workers.$inferSelect,
+  extras?: { contractHasWorkerSignature?: boolean }
+) {
   return {
     id: w.id,
     firstName: w.firstName,
@@ -103,12 +107,38 @@ function serializeWorker(w: typeof workers.$inferSelect) {
     contractDownloadPath: w.contractPdfKey ? `/api/provoz/workers/${w.id}/contract/pdf` : null,
     contractFilePath: w.contractPdfKey ? `/api/provoz/workers/${w.id}/contract/file` : null,
     contractSignedAt: w.contractSignedAt,
+    contractHasWorkerSignature: extras?.contractHasWorkerSignature,
     contractAccountingSeenAt: w.contractAccountingSeenAt,
     contractAccountingEmailedAt: w.contractAccountingEmailedAt,
     deletedAt: w.deletedAt,
     createdAt: w.createdAt,
     updatedAt: w.updatedAt,
   };
+}
+
+async function serializeWorkerDetail(w: typeof workers.$inferSelect) {
+  const contractHasWorkerSignature = await workerHasStoredSignature(w);
+  return serializeWorker(w, { contractHasWorkerSignature });
+}
+
+async function maybeRefreshGeneratedContractPdf(
+  worker: typeof workers.$inferSelect
+): Promise<typeof workers.$inferSelect> {
+  if (worker.status !== 'active' || worker.contractSource !== 'generated') return worker;
+  try {
+    const { key } = await persistWorkerContractPdf(worker);
+    if (key === worker.contractPdfKey) return worker;
+    const db = getDb();
+    const [row] = await db
+      .update(workers)
+      .set({ contractPdfKey: key, updatedAt: new Date() })
+      .where(eq(workers.id, worker.id))
+      .returning();
+    return row ?? worker;
+  } catch (err) {
+    console.error('[contract/refresh-pdf]', err);
+    return worker;
+  }
 }
 
 provozStaffRouter.get('/workers', async (c) => {
@@ -119,7 +149,7 @@ provozStaffRouter.get('/workers', async (c) => {
     .from(workers)
     .where(deleted ? isNotNull(workers.deletedAt) : isNull(workers.deletedAt))
     .orderBy(asc(workers.lastName), asc(workers.firstName));
-  return c.json({ workers: rows.map(serializeWorker) });
+  return c.json({ workers: rows.map((w) => serializeWorker(w)) });
 });
 
 provozStaffRouter.post('/workers', async (c) => {
@@ -155,7 +185,7 @@ provozStaffRouter.get('/workers/:id', async (c) => {
   const db = getDb();
   const [row] = await db.select().from(workers).where(eq(workers.id, id)).limit(1);
   if (!row) return c.json({ error: 'Not found' }, 404);
-  return c.json({ worker: serializeWorker(row) });
+  return c.json({ worker: await serializeWorkerDetail(row) });
 });
 
 provozStaffRouter.patch('/workers/:id', async (c) => {
@@ -170,7 +200,8 @@ provozStaffRouter.patch('/workers/:id', async (c) => {
     .where(eq(workers.id, id))
     .returning();
   if (!row) return c.json({ error: 'Not found' }, 404);
-  return c.json({ worker: serializeWorker(row) });
+  const refreshed = await maybeRefreshGeneratedContractPdf(row);
+  return c.json({ worker: await serializeWorkerDetail(refreshed) });
 });
 
 provozStaffRouter.delete('/workers/:id', async (c) => {
@@ -331,6 +362,22 @@ provozStaffRouter.post('/workers/:id/contract/sign-worker', async (c) => {
   const parsed = signCompleteSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: 'Invalid body' }, 400);
 
+  const db = getDb();
+  const [existing] = await db.select().from(workers).where(eq(workers.id, id)).limit(1);
+  if (!existing || existing.deletedAt) return c.json({ error: 'Not found' }, 404);
+
+  const isActiveResign = existing.status === 'active';
+  if (isActiveResign) {
+    if (existing.contractSource === 'scan') {
+      return c.json({ error: 'U smlouvy ze skenu nelze doplnit digitální podpis' }, 400);
+    }
+    if (await workerHasStoredSignature(existing)) {
+      return c.json({ error: 'Podpis zaměstnance je již uložen' }, 400);
+    }
+  } else if (existing.status !== 'draft' && existing.status !== 'contract_pending') {
+    return c.json({ error: 'Podpis lze uložit jen u rozpracované nebo aktivní smlouvy bez podpisu' }, 400);
+  }
+
   let signatureKey = parsed.data.storageKey;
   if (parsed.data.signatureDataUrl) {
     try {
@@ -345,15 +392,14 @@ provozStaffRouter.post('/workers/:id/contract/sign-worker', async (c) => {
     return c.json({ error: 'Invalid storage key' }, 400);
   }
 
-  const db = getDb();
   const signedAt = new Date();
   const [row] = await db
     .update(workers)
     .set({
       contractSignatureWorkerKey: signatureKey,
-      contractSignedAt: signedAt,
+      contractSignedAt: existing.contractSignedAt ?? signedAt,
       contractSource: 'generated',
-      contractAccountingSeenAt: null,
+      contractAccountingSeenAt: isActiveResign ? existing.contractAccountingSeenAt : null,
       updatedAt: new Date(),
     })
     .where(eq(workers.id, id))
@@ -364,15 +410,22 @@ provozStaffRouter.post('/workers/:id/contract/sign-worker', async (c) => {
     const { key: pdfKey } = await persistWorkerContractPdf(row);
     const [finalWorker] = await db
       .update(workers)
-      .set({ contractPdfKey: pdfKey, status: 'active', updatedAt: new Date() })
+      .set({
+        contractPdfKey: pdfKey,
+        ...(isActiveResign ? {} : { status: 'active' as const }),
+        updatedAt: new Date(),
+      })
       .where(eq(workers.id, id))
       .returning();
     const worker = finalWorker ?? row;
-    const mail = await notifyAccountingOfContract(worker);
+    const mail = isActiveResign
+      ? { emailed: false }
+      : await notifyAccountingOfContract(worker);
     return c.json({
-      worker: serializeWorker(worker),
-      accountingQueued: true,
+      worker: await serializeWorkerDetail(worker),
+      accountingQueued: !isActiveResign,
       accountingEmailed: mail.emailed,
+      signatureAttached: isActiveResign,
     });
   } catch (err) {
     console.error('[contract/sign-worker]', err);

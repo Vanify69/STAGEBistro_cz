@@ -271,6 +271,8 @@ export default function WorkerDetailPage() {
   const canDownloadContract = Boolean(
     w.contractPdfKey || w.status === 'contract_pending' || (w.status === 'active' && w.contractSignedAt)
   );
+  const needsWorkerSignature =
+    w.status === 'active' && w.contractSource !== 'scan' && w.contractHasWorkerSignature === false;
 
   return (
     <div className="space-y-8 max-w-xl">
@@ -416,6 +418,21 @@ export default function WorkerDetailPage() {
               </Button>
             </div>
           </>
+        )}
+        {needsWorkerSignature && (
+          <div className="space-y-2 border-t border-amber-200 bg-amber-50/50 p-3 rounded">
+            <p className="text-sm text-amber-900">
+              Digitální podpis zaměstnance v systému chybí — doplňte ho pro kompletní smlouvu PDF.
+            </p>
+            <Label>Podpis zaměstnance (digitálně)</Label>
+            <SignaturePad onChange={setRecipientSig} />
+            {signContract.isError && (
+              <p className="text-sm text-red-600">{(signContract.error as Error).message}</p>
+            )}
+            <Button type="button" onClick={() => signContract.mutate()} disabled={signContract.isPending}>
+              {signContract.isPending ? 'Ukládám…' : 'Doplnit podpis a uložit do smlouvy'}
+            </Button>
+          </div>
         )}
       </section>
 

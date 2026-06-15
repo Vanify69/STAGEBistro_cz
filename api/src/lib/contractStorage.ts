@@ -34,8 +34,19 @@ function canRegenerateContract(worker: Worker): boolean {
   return worker.contractSource === 'generated' || Boolean(worker.contractSignatureWorkerKey);
 }
 
+export async function workerHasStoredSignature(worker: Worker): Promise<boolean> {
+  if (!worker.contractSignatureWorkerKey) return false;
+  const buf = await getStorageBuffer(worker.contractSignatureWorkerKey);
+  return Boolean(buf?.length);
+}
+
 export async function resolveWorkerContractFile(worker: Worker): Promise<ResolvedContractFile> {
-  if (worker.contractPdfKey) {
+  const preferFreshGeneratedPdf =
+    worker.status === 'active' && worker.contractSource === 'generated';
+
+  let storageMiss = false;
+
+  if (worker.contractPdfKey && !preferFreshGeneratedPdf) {
     const buf = await getStorageBuffer(worker.contractPdfKey);
     if (buf) {
       return {
@@ -46,6 +57,7 @@ export async function resolveWorkerContractFile(worker: Worker): Promise<Resolve
         regenerated: false,
       };
     }
+    storageMiss = true;
   }
 
   if (!canRegenerateContract(worker)) {
@@ -67,7 +79,7 @@ export async function resolveWorkerContractFile(worker: Worker): Promise<Resolve
       buf: pdf,
       contentType: 'application/pdf',
       filenameExt: 'pdf',
-      regenerated: true,
+      regenerated: storageMiss || !worker.contractPdfKey,
       newPdfKey,
     };
   } catch (err) {

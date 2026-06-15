@@ -22,6 +22,7 @@ export type Worker = {
   contractDownloadPath: string | null;
   contractFilePath: string | null;
   contractSignedAt: string | null;
+  contractHasWorkerSignature?: boolean;
   contractAccountingSeenAt: string | null;
   contractAccountingEmailedAt: string | null;
   deletedAt: string | null;

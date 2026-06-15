@@ -47,9 +47,15 @@ export async function buildContractDpcPdf(
   paragraph(`Sídlo: ${employer.address}`);
   paragraph(`IČ: ${employer.ico}`);
   y -= 2;
-  paragraph(
-    `Zaměstnanec: ${worker.firstName} ${worker.lastName}, nar. ${worker.birthDate ?? '…………'}, bytem ${worker.address ?? '…………'}`
-  );
+  const employeeParts = [
+    `Zaměstnanec: ${worker.firstName} ${worker.lastName}`,
+    `nar. ${worker.birthDate ?? '…………'}`,
+    `bytem ${worker.address ?? '…………'}`,
+  ];
+  if (worker.healthInsurance) {
+    employeeParts.push(`zdravotní pojišťovna: ${worker.healthInsurance}`);
+  }
+  paragraph(employeeParts.join(', '));
   y -= 4;
   paragraph(`1. Sjednaný pracovní úkol: ${worker.position}`);
   paragraph('2. Sjednaný rozsah práce: práce nebude přesahovat 300 hodin v kalendářním roce.');
