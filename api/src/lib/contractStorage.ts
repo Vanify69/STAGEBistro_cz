@@ -40,13 +40,22 @@ export async function workerHasStoredSignature(worker: Worker): Promise<boolean>
   return Boolean(buf?.length);
 }
 
-export async function resolveWorkerContractFile(worker: Worker): Promise<ResolvedContractFile> {
-  const preferFreshGeneratedPdf =
-    worker.status === 'active' && worker.contractSource === 'generated';
+export async function workerContractPdfExists(worker: Worker): Promise<boolean> {
+  if (!worker.contractPdfKey) return false;
+  const buf = await getStorageBuffer(worker.contractPdfKey);
+  return Boolean(buf?.length);
+}
 
+/** Přegenerovat jen když máme podpisové soubory, nebo když PDF v úložišti ještě neexistuje. */
+export async function canSafelyRegenerateContract(worker: Worker): Promise<boolean> {
+  if (!(await workerContractPdfExists(worker))) return true;
+  return workerHasStoredSignature(worker);
+}
+
+export async function resolveWorkerContractFile(worker: Worker): Promise<ResolvedContractFile> {
   let storageMiss = false;
 
-  if (worker.contractPdfKey && !preferFreshGeneratedPdf) {
+  if (worker.contractPdfKey) {
     const buf = await getStorageBuffer(worker.contractPdfKey);
     if (buf) {
       return {

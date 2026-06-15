@@ -36,6 +36,7 @@ import {
   persistWorkerContractPdf,
   resolveWorkerContractFile,
   workerHasStoredSignature,
+  canSafelyRegenerateContract,
 } from '../lib/contractStorage.js';
 import { CONTRACT_SCAN_MIMES, extForContractMime } from '../lib/contractFile.js';
 import { notifyAccountingOfContract } from '../lib/contractAccountingNotify.js';
@@ -125,6 +126,7 @@ async function maybeRefreshGeneratedContractPdf(
   worker: typeof workers.$inferSelect
 ): Promise<typeof workers.$inferSelect> {
   if (worker.status !== 'active' || worker.contractSource !== 'generated') return worker;
+  if (!(await canSafelyRegenerateContract(worker))) return worker;
   try {
     const { key } = await persistWorkerContractPdf(worker);
     if (key === worker.contractPdfKey) return worker;
