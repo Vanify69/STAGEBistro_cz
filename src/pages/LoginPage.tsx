@@ -3,12 +3,11 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
-import { defaultPathForRole, safeNextPath } from '@/lib/loginRedirect';
+import { defaultPathForUser, safeNextPath } from '@/lib/loginRedirect';
+import type { MeResponse } from '@/lib/permissions';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
-
-type MeResponse = { user: { id: string; email: string; role: string } | null };
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -25,19 +24,19 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!me?.user) return;
-    navigate(nextPath ?? defaultPathForRole(me.user.role), { replace: true });
+    navigate(nextPath ?? defaultPathForUser(me.user.role, me.user.permissions), { replace: true });
   }, [me, navigate, nextPath]);
 
   const login = useMutation({
     mutationFn: async () => {
-      return apiFetch<{ user: { role: string } }>('/api/auth/login', {
+      return apiFetch<MeResponse>('/api/auth/login', {
         method: 'POST',
         body: JSON.stringify({ email, password }),
       });
     },
     onSuccess: async (res) => {
       await queryClient.invalidateQueries({ queryKey: ['me'] });
-      navigate(nextPath ?? defaultPathForRole(res.user.role), { replace: true });
+      navigate(nextPath ?? defaultPathForUser(res.user.role, res.user.permissions), { replace: true });
     },
   });
 

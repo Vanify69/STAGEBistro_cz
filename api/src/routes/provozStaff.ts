@@ -47,6 +47,15 @@ import {
   updateAttendanceTimes,
   updateShiftTimesAndSyncAttendance,
 } from '../lib/attendanceUpdate.js';
+import {
+  permStaffWorkersRead,
+  permStaffWorkersWrite,
+  permStaffContracts,
+  permStaffShifts,
+  permStaffAttendance,
+  permStaffPayments,
+} from '../lib/staffRoutePermissions.js';
+import { auditAction, AUDIT_ACTIONS, writeAudit } from '../lib/auditLog.js';
 
 export const provozStaffRouter = new Hono<{ Variables: { user: AuthUser } }>();
 
@@ -143,7 +152,7 @@ async function maybeRefreshGeneratedContractPdf(
   }
 }
 
-provozStaffRouter.get('/workers', async (c) => {
+provozStaffRouter.get('/workers', permStaffWorkersRead, async (c) => {
   const deleted = c.req.query('deleted') === 'true';
   const db = getDb();
   const rows = await db
@@ -154,7 +163,7 @@ provozStaffRouter.get('/workers', async (c) => {
   return c.json({ workers: rows.map((w) => serializeWorker(w)) });
 });
 
-provozStaffRouter.post('/workers', async (c) => {
+provozStaffRouter.post('/workers', permStaffWorkersWrite, async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = workerCreateSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: 'Invalid body' }, 400);
@@ -179,10 +188,18 @@ provozStaffRouter.post('/workers', async (c) => {
       status: 'draft',
     })
     .returning();
+  const user = c.get('user');
+  await writeAudit({
+    user,
+    action: AUDIT_ACTIONS.staff.workerCreate,
+    entityType: 'worker',
+    entityId: row!.id,
+    summary: `Nový brigádník: ${row!.firstName} ${row!.lastName}`,
+  });
   return c.json({ worker: serializeWorker(row!) }, 201);
 });
 
-provozStaffRouter.get('/workers/:id', async (c) => {
+provozStaffRouter.get('/workers/:id', permStaffWorkersRead, async (c) => {
   const id = c.req.param('id');
   const db = getDb();
   const [row] = await db.select().from(workers).where(eq(workers.id, id)).limit(1);
@@ -190,7 +207,7 @@ provozStaffRouter.get('/workers/:id', async (c) => {
   return c.json({ worker: await serializeWorkerDetail(row) });
 });
 
-provozStaffRouter.patch('/workers/:id', async (c) => {
+provozStaffRouter.patch('/workers/:id', permStaffWorkersWrite, async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json().catch(() => null);
   const parsed = workerPatchSchema.safeParse(body);
@@ -202,11 +219,19 @@ provozStaffRouter.patch('/workers/:id', async (c) => {
     .where(eq(workers.id, id))
     .returning();
   if (!row) return c.json({ error: 'Not found' }, 404);
+  const user = c.get('user');
+  await writeAudit({
+    user,
+    action: AUDIT_ACTIONS.staff.workerUpdate,
+    entityType: 'worker',
+    entityId: id,
+    summary: `Upraven brigádník: ${row.firstName} ${row.lastName}`,
+  });
   const refreshed = await maybeRefreshGeneratedContractPdf(row);
   return c.json({ worker: await serializeWorkerDetail(refreshed) });
 });
 
-provozStaffRouter.delete('/workers/:id', async (c) => {
+provozStaffRouter.delete('/workers/:id', permStaffWorkersWrite, async (c) => {
   const id = c.req.param('id');
   const db = getDb();
   const [row] = await db
@@ -215,10 +240,16 @@ provozStaffRouter.delete('/workers/:id', async (c) => {
     .where(eq(workers.id, id))
     .returning();
   if (!row) return c.json({ error: 'Not found' }, 404);
+  await auditAction(c, {
+    action: AUDIT_ACTIONS.staff.workerDelete,
+    entityType: 'worker',
+    entityId: id,
+    summary: `Brigádník přesunut do koše: ${row.firstName} ${row.lastName}`,
+  });
   return c.json({ worker: serializeWorker(row) });
 });
 
-provozStaffRouter.post('/workers/:id/restore', async (c) => {
+provozStaffRouter.post('/workers/:id/restore', permStaffWorkersWrite, async (c) => {
   const id = c.req.param('id');
   const db = getDb();
   const [row] = await db
@@ -227,10 +258,16 @@ provozStaffRouter.post('/workers/:id/restore', async (c) => {
     .where(eq(workers.id, id))
     .returning();
   if (!row) return c.json({ error: 'Not found' }, 404);
+  await auditAction(c, {
+    action: AUDIT_ACTIONS.staff.workerRestore,
+    entityType: 'worker',
+    entityId: id,
+    summary: `Brigádník obnoven z koše: ${row.firstName} ${row.lastName}`,
+  });
   return c.json({ worker: serializeWorker(row) });
 });
 
-provozStaffRouter.get('/workers/:id/stats', async (c) => {
+provozStaffRouter.get('/workers/:id/stats', permStaffWorkersRead, async (c) => {
   const id = c.req.param('id');
   const db = getDb();
   const [row] = await db.select().from(workers).where(eq(workers.id, id)).limit(1);
@@ -239,7 +276,7 @@ provozStaffRouter.get('/workers/:id/stats', async (c) => {
   return c.json({ stats });
 });
 
-provozStaffRouter.post('/workers/:id/contract/generate', async (c) => {
+provozStaffRouter.post('/workers/:id/contract/generate', permStaffContracts, async (c) => {
   const id = c.req.param('id');
   const db = getDb();
   const [worker] = await db.select().from(workers).where(eq(workers.id, id)).limit(1);
@@ -254,6 +291,12 @@ provozStaffRouter.post('/workers/:id/contract/generate', async (c) => {
       .set({ contractPdfKey: key, status: 'contract_pending', updatedAt: new Date() })
       .where(eq(workers.id, id))
       .returning();
+    await auditAction(c, {
+      action: AUDIT_ACTIONS.staff.contractGenerate,
+      entityType: 'worker',
+      entityId: id,
+      summary: `Vygenerována smlouva DPC: ${worker.firstName} ${worker.lastName}`,
+    });
     return c.json({ worker: serializeWorker(row!) });
   } catch (err) {
     console.error('[contract/generate]', err);
@@ -261,7 +304,7 @@ provozStaffRouter.post('/workers/:id/contract/generate', async (c) => {
   }
 });
 
-provozStaffRouter.get('/workers/:id/contract/file', async (c) => {
+provozStaffRouter.get('/workers/:id/contract/file', permStaffContracts, async (c) => {
   const id = c.req.param('id');
   const db = getDb();
   const [worker] = await db.select().from(workers).where(eq(workers.id, id)).limit(1);
@@ -282,7 +325,7 @@ provozStaffRouter.get('/workers/:id/contract/file', async (c) => {
   });
 });
 
-provozStaffRouter.post('/workers/:id/contract/upload-scan', async (c) => {
+provozStaffRouter.post('/workers/:id/contract/upload-scan', permStaffContracts, async (c) => {
   const id = c.req.param('id');
   const mime = (c.req.header('content-type') ?? '').split(';')[0]!.trim().toLowerCase();
   if (!(CONTRACT_SCAN_MIMES as readonly string[]).includes(mime)) {
@@ -320,10 +363,16 @@ provozStaffRouter.post('/workers/:id/contract/upload-scan', async (c) => {
     .returning();
 
   const mail = await notifyAccountingOfContract(row!);
+  await auditAction(c, {
+    action: AUDIT_ACTIONS.staff.contractScan,
+    entityType: 'worker',
+    entityId: id,
+    summary: `Nahrán scan smlouvy: ${row!.firstName} ${row!.lastName}`,
+  });
   return c.json({ worker: serializeWorker(row!), accountingQueued: true, accountingEmailed: mail.emailed });
 });
 
-provozStaffRouter.get('/workers/:id/contract/pdf', async (c) => {
+provozStaffRouter.get('/workers/:id/contract/pdf', permStaffContracts, async (c) => {
   const id = c.req.param('id');
   const db = getDb();
   const [worker] = await db.select().from(workers).where(eq(workers.id, id)).limit(1);
@@ -350,7 +399,7 @@ const signCompleteSchema = z.object({
   message: 'storageKey nebo signatureDataUrl je povinne',
 });
 
-provozStaffRouter.post('/workers/:id/contract/presign-worker', async (c) => {
+provozStaffRouter.post('/workers/:id/contract/presign-worker', permStaffContracts, async (c) => {
   if (!isR2Configured()) return c.json({ error: 'R2 not configured' }, 503);
   const id = c.req.param('id');
   const storageKey = `stagebistro/workers/${id}/signatures/worker-${crypto.randomUUID()}.png`;
@@ -358,7 +407,7 @@ provozStaffRouter.post('/workers/:id/contract/presign-worker', async (c) => {
   return c.json({ uploadUrl, storageKey });
 });
 
-provozStaffRouter.post('/workers/:id/contract/sign-worker', async (c) => {
+provozStaffRouter.post('/workers/:id/contract/sign-worker', permStaffContracts, async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json().catch(() => null);
   const parsed = signCompleteSchema.safeParse(body);
@@ -423,6 +472,15 @@ provozStaffRouter.post('/workers/:id/contract/sign-worker', async (c) => {
     const mail = isActiveResign
       ? { emailed: false }
       : await notifyAccountingOfContract(worker);
+    await auditAction(c, {
+      action: AUDIT_ACTIONS.staff.contractSign,
+      entityType: 'worker',
+      entityId: id,
+      summary: isActiveResign
+        ? `Doplněn podpis zaměstnance ke smlouvě: ${worker.firstName} ${worker.lastName}`
+        : `Podepsána smlouva DPC: ${worker.firstName} ${worker.lastName}`,
+      metadata: { activeResign: isActiveResign },
+    });
     return c.json({
       worker: await serializeWorkerDetail(worker),
       accountingQueued: !isActiveResign,
@@ -435,7 +493,7 @@ provozStaffRouter.post('/workers/:id/contract/sign-worker', async (c) => {
   }
 });
 
-provozStaffRouter.get('/calendar/:year/:month', async (c) => {
+provozStaffRouter.get('/calendar/:year/:month', permStaffShifts, async (c) => {
   const year = Number(c.req.param('year'));
   const month = Number(c.req.param('month'));
   if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
@@ -445,7 +503,7 @@ provozStaffRouter.get('/calendar/:year/:month', async (c) => {
   return c.json({ calendar });
 });
 
-provozStaffRouter.get('/shifts', async (c) => {
+provozStaffRouter.get('/shifts', permStaffShifts, async (c) => {
   const from = c.req.query('from');
   const to = c.req.query('to');
   if (!from || !to || !isValidYmd(from) || !isValidYmd(to)) {
@@ -485,7 +543,7 @@ provozStaffRouter.get('/shifts', async (c) => {
   });
 });
 
-provozStaffRouter.post('/shifts', async (c) => {
+provozStaffRouter.post('/shifts', permStaffShifts, async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = shiftSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: 'Invalid body' }, 400);
@@ -513,6 +571,13 @@ provozStaffRouter.post('/shifts', async (c) => {
       })
       .returning();
     await db.insert(attendanceRecords).values({ shiftAssignmentId: shift!.id });
+    await auditAction(c, {
+      action: AUDIT_ACTIONS.staff.shiftCreate,
+      entityType: 'shift',
+      entityId: shift!.id,
+      summary: `Nová směna ${parsed.data.businessDate}: ${worker.firstName} ${worker.lastName}`,
+      metadata: { workerId: worker.id, businessDate: parsed.data.businessDate },
+    });
     return c.json({ shift: { ...shift, plannedStart: formatTimeHm(String(shift!.plannedStart)), plannedEnd: formatTimeHm(String(shift!.plannedEnd)) } }, 201);
   } catch {
     return c.json({ error: 'Směna pro tento den již existuje' }, 409);
@@ -524,7 +589,7 @@ const attendanceTimesSchema = z.object({
   actualEnd: z.string().regex(hmRegex),
 });
 
-provozStaffRouter.patch('/shifts/:id', async (c) => {
+provozStaffRouter.patch('/shifts/:id', permStaffShifts, async (c) => {
   const id = c.req.param('id');
   const user = c.get('user');
   const body = await c.req.json().catch(() => null);
@@ -539,6 +604,12 @@ provozStaffRouter.patch('/shifts/:id', async (c) => {
         parsed.data.plannedEnd,
         user.id
       );
+      await auditAction(c, {
+        action: AUDIT_ACTIONS.staff.shiftUpdate,
+        entityType: 'shift',
+        entityId: id,
+        summary: `Upravena směna ${shift.businessDate}`,
+      });
       return c.json({
         shift: {
           ...shift,
@@ -560,13 +631,19 @@ provozStaffRouter.patch('/shifts/:id', async (c) => {
       .where(eq(shiftAssignments.id, id))
       .returning();
     if (!shift) return c.json({ error: 'Not found' }, 404);
+    await auditAction(c, {
+      action: AUDIT_ACTIONS.staff.shiftUpdate,
+      entityType: 'shift',
+      entityId: id,
+      summary: `Upravena směna ${shift.businessDate}`,
+    });
     return c.json({ shift });
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : 'Úprava směny selhala' }, 400);
   }
 });
 
-provozStaffRouter.patch('/attendance/:attendanceId', async (c) => {
+provozStaffRouter.patch('/attendance/:attendanceId', permStaffAttendance, async (c) => {
   const attendanceId = c.req.param('attendanceId');
   const user = c.get('user');
   const body = await c.req.json().catch(() => null);
@@ -580,13 +657,19 @@ provozStaffRouter.patch('/attendance/:attendanceId', async (c) => {
       parsed.data.actualEnd,
       user.id
     );
+    await auditAction(c, {
+      action: AUDIT_ACTIONS.staff.attendanceUpdate,
+      entityType: 'attendance',
+      entityId: attendanceId,
+      summary: `Upravena docházka (${parsed.data.actualStart}–${parsed.data.actualEnd})`,
+    });
     return c.json({ attendance });
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : 'Úprava docházky selhala' }, 400);
   }
 });
 
-provozStaffRouter.delete('/shifts/:id', async (c) => {
+provozStaffRouter.delete('/shifts/:id', permStaffShifts, async (c) => {
   const id = c.req.param('id');
   const db = getDb();
   const [row] = await db
@@ -608,16 +691,22 @@ provozStaffRouter.delete('/shifts/:id', async (c) => {
     .where(eq(shiftAssignments.id, id))
     .returning();
   if (!shift) return c.json({ error: 'Not found' }, 404);
+  await auditAction(c, {
+    action: AUDIT_ACTIONS.staff.shiftDelete,
+    entityType: 'shift',
+    entityId: id,
+    summary: `Zrušena směna ${shift.businessDate}`,
+  });
   return c.json({ ok: true });
 });
 
-provozStaffRouter.get('/workers/:id/unconfirmed', async (c) => {
+provozStaffRouter.get('/workers/:id/unconfirmed', permStaffAttendance, async (c) => {
   const id = c.req.param('id');
   const items = await listUnconfirmedShifts(id);
   return c.json({ items });
 });
 
-provozStaffRouter.post('/workers/:id/shifts/:shiftId/confirm-attendance', async (c) => {
+provozStaffRouter.post('/workers/:id/shifts/:shiftId/confirm-attendance', permStaffAttendance, async (c) => {
   const shiftId = c.req.param('shiftId');
   const workerId = c.req.param('id');
   const user = c.get('user');
@@ -644,13 +733,20 @@ provozStaffRouter.post('/workers/:id/shifts/:shiftId/confirm-attendance', async 
       startHm,
       endHm
     );
+    await auditAction(c, {
+      action: AUDIT_ACTIONS.staff.attendanceConfirm,
+      entityType: 'shift',
+      entityId: shiftId,
+      summary: `Potvrzena docházka za směnu ${shift.businessDate}`,
+      metadata: { workerId },
+    });
     return c.json({ attendance });
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : 'Potvrzení selhalo' }, 400);
   }
 });
 
-provozStaffRouter.get('/workers/:id/unpaid', async (c) => {
+provozStaffRouter.get('/workers/:id/unpaid', permStaffPayments, async (c) => {
   const id = c.req.param('id');
   const unpaid = await listUnpaidAttendance(id);
   return c.json({
@@ -671,7 +767,7 @@ const paymentPreviewSchema = z.object({
   attendanceRecordIds: z.array(z.string().uuid()).min(1),
 });
 
-provozStaffRouter.post('/workers/:id/payments/preview', async (c) => {
+provozStaffRouter.post('/workers/:id/payments/preview', permStaffPayments, async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json().catch(() => null);
   const parsed = paymentPreviewSchema.safeParse(body);
@@ -698,7 +794,7 @@ const paymentCreateSchema = paymentPreviewSchema.extend({
   note: z.string().nullable().optional(),
 });
 
-provozStaffRouter.post('/workers/:id/payments', async (c) => {
+provozStaffRouter.post('/workers/:id/payments', permStaffPayments, async (c) => {
   const id = c.req.param('id');
   const user = c.get('user');
   const body = await c.req.json().catch(() => null);
@@ -780,6 +876,14 @@ provozStaffRouter.post('/workers/:id/payments', async (c) => {
     .where(eq(wagePayments.id, payment!.id))
     .returning();
 
+  await auditAction(c, {
+    action: AUDIT_ACTIONS.staff.paymentCreate,
+    entityType: 'wage_payment',
+    entityId: payment!.id,
+    summary: `Výplata VPP č. ${vppNumber}: ${worker.firstName} ${worker.lastName} (${(amountCents / 100).toFixed(2)} Kč)`,
+    metadata: { workerId: id, vppNumber, amountCents, workedMinutesTotal },
+  });
+
   return c.json({
     payment: {
       ...updated,
@@ -788,7 +892,7 @@ provozStaffRouter.post('/workers/:id/payments', async (c) => {
   }, 201);
 });
 
-provozStaffRouter.get('/workers/:id/payments', async (c) => {
+provozStaffRouter.get('/workers/:id/payments', permStaffPayments, async (c) => {
   const id = c.req.param('id');
   const db = getDb();
   const rows = await db
@@ -804,7 +908,7 @@ provozStaffRouter.get('/workers/:id/payments', async (c) => {
   });
 });
 
-provozStaffRouter.post('/workers/:id/payments/presign-signature', async (c) => {
+provozStaffRouter.post('/workers/:id/payments/presign-signature', permStaffPayments, async (c) => {
   const id = c.req.param('id');
   const role = c.req.query('role');
   if (role !== 'recipient' && role !== 'issuer') {

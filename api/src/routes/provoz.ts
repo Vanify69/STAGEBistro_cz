@@ -4,15 +4,16 @@ import { and, asc, eq, gte, lte } from 'drizzle-orm';
 import { getDb } from '../db/index.js';
 import { dailySales, expenseReceipts } from '../db/schema.js';
 import type { AuthUser } from '../lib/session.js';
-import { requireAuth, requireRole } from '../middleware/auth.js';
+import { requireAuth } from '../middleware/auth.js';
 import { isValidYmd } from '../lib/pragueDate.js';
 import { isR2Configured, presignPutObject } from '../lib/s3.js';
+import { permProvozSales, permProvozReceipts } from '../lib/staffRoutePermissions.js';
+import { auditAction, AUDIT_ACTIONS, writeAudit } from '../lib/auditLog.js';
 import { provozStaffRouter } from './provozStaff.js';
 
 export const provozRouter = new Hono<{ Variables: { user: AuthUser } }>();
 
 provozRouter.use('*', requireAuth);
-provozRouter.use('*', requireRole('admin', 'provoz'));
 
 provozRouter.route('/', provozStaffRouter);
 
@@ -25,7 +26,7 @@ const dailySchema = z.object({
   notes: z.string().nullable().optional(),
 });
 
-provozRouter.get('/daily/:date', async (c) => {
+provozRouter.get('/daily/:date', permProvozSales, async (c) => {
   const date = c.req.param('date');
   if (!isValidYmd(date)) return c.json({ error: 'Invalid date' }, 400);
   const db = getDb();
@@ -33,7 +34,7 @@ provozRouter.get('/daily/:date', async (c) => {
   return c.json({ daily: rows[0] ?? null });
 });
 
-provozRouter.put('/daily/:date', async (c) => {
+provozRouter.put('/daily/:date', permProvozSales, async (c) => {
   const date = c.req.param('date');
   if (!isValidYmd(date)) return c.json({ error: 'Invalid date' }, 400);
   const body = await c.req.json().catch(() => null);
@@ -68,10 +69,17 @@ provozRouter.put('/daily/:date', async (c) => {
       },
     })
     .returning();
+  await writeAudit({
+    user,
+    action: AUDIT_ACTIONS.provoz.salesUpdate,
+    entityType: 'daily_sales',
+    entityId: date,
+    summary: `Uloženy tržby za ${date}`,
+  });
   return c.json({ daily: row });
 });
 
-provozRouter.get('/month/:year/:month', async (c) => {
+provozRouter.get('/month/:year/:month', permProvozSales, async (c) => {
   const year = Number(c.req.param('year'));
   const month = Number(c.req.param('month'));
   if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
@@ -97,7 +105,7 @@ const receiptCreateSchema = z.object({
   note: z.string().nullable().optional(),
 });
 
-provozRouter.post('/receipts', async (c) => {
+provozRouter.post('/receipts', permProvozReceipts, async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = receiptCreateSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: 'Invalid body' }, 400);
@@ -114,6 +122,13 @@ provozRouter.post('/receipts', async (c) => {
       uploadedBy: user.id,
     })
     .returning();
+  await auditAction(c, {
+    action: AUDIT_ACTIONS.provoz.receiptCreate,
+    entityType: 'expense_receipt',
+    entityId: row!.id,
+    summary: `Nová účtenka (${parsed.data.category})`,
+    metadata: { category: parsed.data.category },
+  });
   return c.json({ receipt: row }, 201);
 });
 
@@ -121,7 +136,7 @@ const presignSchema = z.object({
   mime: z.string().min(3),
 });
 
-provozRouter.post('/receipts/:id/presign', async (c) => {
+provozRouter.post('/receipts/:id/presign', permProvozReceipts, async (c) => {
   if (!isR2Configured()) {
     return c.json({ error: 'File upload is not configured (R2)' }, 503);
   }
@@ -144,7 +159,7 @@ const receiptCompleteSchema = z.object({
   mime: z.string().min(1),
 });
 
-provozRouter.patch('/receipts/:id/complete', async (c) => {
+provozRouter.patch('/receipts/:id/complete', permProvozReceipts, async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json().catch(() => null);
   const parsed = receiptCompleteSchema.safeParse(body);
@@ -159,10 +174,17 @@ provozRouter.patch('/receipts/:id/complete', async (c) => {
     .where(eq(expenseReceipts.id, id))
     .returning();
   if (!row) return c.json({ error: 'Not found' }, 404);
+  await auditAction(c, {
+    action: AUDIT_ACTIONS.provoz.receiptUpload,
+    entityType: 'expense_receipt',
+    entityId: id,
+    summary: `Nahrán soubor účtenky`,
+    metadata: { mime: parsed.data.mime },
+  });
   return c.json({ receipt: row });
 });
 
-provozRouter.get('/receipts', async (c) => {
+provozRouter.get('/receipts', permProvozReceipts, async (c) => {
   const db = getDb();
   const rows = await db.select().from(expenseReceipts).orderBy(asc(expenseReceipts.createdAt)).limit(200);
   return c.json({ receipts: rows });

@@ -1,28 +1,24 @@
 import { useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router';
-import { useQuery } from '@tanstack/react-query';
-import { apiFetch } from '@/lib/api';
-import { loginPathFor } from '@/lib/loginRedirect';
-
-type MeResponse = { user: { id: string; email: string; role: string } | null };
+import { usePermissions } from '@/lib/usePermissions';
+import { loginPathFor, defaultPathForUser } from '@/lib/loginRedirect';
 
 export function useProvozAuth() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { data: me, isLoading } = useQuery({
-    queryKey: ['me'],
-    queryFn: () => apiFetch<MeResponse>('/api/auth/me'),
-  });
+  const { user, isLoading, canAccessProvoz } = usePermissions();
 
   useEffect(() => {
     if (isLoading) return;
-    if (!me?.user) {
+    if (!user) {
       const returnTo = `${location.pathname}${location.search}`;
       navigate(loginPathFor(returnTo), { replace: true });
+      return;
     }
-    else if (me.user.role === 'ucetni') navigate('/ucetni', { replace: true });
-  }, [me, isLoading, navigate, location.pathname, location.search]);
+    if (!canAccessProvoz) {
+      navigate(defaultPathForUser(user.role, user.permissions), { replace: true });
+    }
+  }, [user, isLoading, navigate, location.pathname, location.search, canAccessProvoz]);
 
-  const allowed = Boolean(me?.user && (me.user.role === 'provoz' || me.user.role === 'admin'));
-  return { me, isLoading, allowed };
+  return { me: user ? { user } : undefined, isLoading, allowed: Boolean(user && canAccessProvoz) };
 }

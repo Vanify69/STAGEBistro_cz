@@ -10,6 +10,7 @@ import { DpcLimitsBadge } from '@/components/staff/DpcLimitsBadge';
 import { SignaturePad } from '@/components/staff/SignaturePad';
 import { uploadContractScan, uploadSignaturePng } from '@/lib/staffUpload';
 import { useProvozAuth } from '@/pages/provoz/useProvozAuth';
+import { usePermissions } from '@/lib/usePermissions';
 
 function kcToCents(v: string) {
   return Math.round(Number(String(v).replace(',', '.')) * 100) || 0;
@@ -19,6 +20,11 @@ export default function WorkerDetailPage() {
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
   const { allowed } = useProvozAuth();
+  const { can } = usePermissions();
+  const canEditWorker = can('staff.workers');
+  const canContracts = can('staff.contracts');
+  const canAttendance = can('staff.attendance');
+  const canPayments = can('staff.payments');
   const [payStep, setPayStep] = useState<'idle' | 'sign' | 'confirm'>('idle');
   const [recipientSig, setRecipientSig] = useState<string | null>(null);
   const [issuerSig, setIssuerSig] = useState<string | null>(null);
@@ -54,7 +60,7 @@ export default function WorkerDetailPage() {
           plannedEnd: string;
         }[];
       }>(`/api/provoz/workers/${id}/unconfirmed`),
-    enabled: allowed && Boolean(id),
+    enabled: allowed && canAttendance && Boolean(id),
   });
 
   const unpaidQ = useQuery({
@@ -71,7 +77,7 @@ export default function WorkerDetailPage() {
           actualEnd: string | null;
         }[];
       }>(`/api/provoz/workers/${id}/unpaid`),
-    enabled: allowed && Boolean(id),
+    enabled: allowed && canPayments && Boolean(id),
   });
 
   const confirmAttendance = useMutation({
@@ -127,7 +133,7 @@ export default function WorkerDetailPage() {
   const paymentsQ = useQuery({
     queryKey: ['provoz', 'worker', id, 'payments'],
     queryFn: () => apiFetch<{ payments: WagePayment[] }>(`/api/provoz/workers/${id}/payments`),
-    enabled: allowed && Boolean(id),
+    enabled: allowed && canPayments && Boolean(id),
   });
 
   const w = workerQ.data?.worker;
@@ -283,8 +289,16 @@ export default function WorkerDetailPage() {
         {w.firstName} {w.lastName}
       </h2>
 
-      {statsQ.data?.stats && <DpcLimitsBadge stats={statsQ.data.stats} />}
+      {statsQ.data?.stats && (canPayments || canEditWorker) && <DpcLimitsBadge stats={statsQ.data.stats} />}
 
+      {!canEditWorker && (
+        <p className="text-sm text-black/60">
+          {w.position} · {(w.hourlyRateCents / 100).toFixed(0)} Kč/h
+          {w.phone ? ` · ${w.phone}` : ''}
+        </p>
+      )}
+
+      {canEditWorker && (
       <section className="space-y-3 border border-black/10 p-4 rounded">
         <h3 className="font-medium">Údaje</h3>
         <div className="grid gap-2">
@@ -349,7 +363,9 @@ export default function WorkerDetailPage() {
           Uložit
         </Button>
       </section>
+      )}
 
+      {canContracts && (
       <section className="space-y-3 border border-black/10 p-4 rounded">
         <h3 className="font-medium">Smlouva DPC</h3>
         <p className="text-sm text-black/60">
@@ -435,8 +451,9 @@ export default function WorkerDetailPage() {
           </div>
         )}
       </section>
+      )}
 
-      {(unconfirmedQ.data?.items.length ?? 0) > 0 && (
+      {canAttendance && (unconfirmedQ.data?.items.length ?? 0) > 0 && (
         <section className="space-y-3 border border-amber-200 bg-amber-50/50 p-4 rounded">
           <h3 className="font-medium">Nepotvrzené směny</h3>
           <p className="text-xs text-black/60">
@@ -541,6 +558,7 @@ export default function WorkerDetailPage() {
         </section>
       )}
 
+      {canPayments && (
       <section className="space-y-3 border border-black/10 p-4 rounded">
         <h3 className="font-medium">Výplata (VPP)</h3>
         {(unpaidQ.data?.items ?? []).length === 0 && (
@@ -722,10 +740,13 @@ export default function WorkerDetailPage() {
           ))}
         </ul>
       </section>
+      )}
 
+      {canEditWorker && (
       <Button type="button" variant="outline" className="text-red-700" onClick={() => del.mutate()}>
         Přesunout do koše
       </Button>
+      )}
     </div>
   );
 }

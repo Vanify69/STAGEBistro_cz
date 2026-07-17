@@ -4,10 +4,14 @@ import { apiFetch } from '@/lib/api';
 import { Button } from '@/app/components/ui/button';
 import type { Worker } from '@/types/staff';
 import { useProvozAuth } from '@/pages/provoz/useProvozAuth';
+import { canManageWorkers } from '@/lib/provozNav';
+import { usePermissions } from '@/lib/usePermissions';
 
 export default function WorkersListPage() {
   const qc = useQueryClient();
   const { allowed } = useProvozAuth();
+  const { permissions } = usePermissions();
+  const canCreate = canManageWorkers(permissions);
   const { data, isLoading } = useQuery({
     queryKey: ['provoz', 'workers'],
     queryFn: () => apiFetch<{ workers: Worker[] }>('/api/provoz/workers'),
@@ -34,9 +38,11 @@ export default function WorkersListPage() {
     <div className="space-y-4">
       <div className="flex justify-between items-center gap-2">
         <h2 className="text-lg font-medium">Zaměstnanci (DPC)</h2>
-        <Button type="button" onClick={() => createBlank.mutate()} disabled={createBlank.isPending}>
-          Nový zaměstnanec
-        </Button>
+        {canCreate && (
+          <Button type="button" onClick={() => createBlank.mutate()} disabled={createBlank.isPending}>
+            Nový zaměstnanec
+          </Button>
+        )}
       </div>
       <ul className="divide-y border border-black/10 rounded">
         {(data?.workers ?? []).map((w) => (

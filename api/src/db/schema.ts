@@ -30,6 +30,24 @@ export const users = pgTable('users', {
   email: text('email').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
   role: roleEnum('role').notNull().default('provoz'),
+  displayName: text('display_name'),
+  isActive: boolean('is_active').notNull().default(true),
+  lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
+  /** JSON pole permission stringů; null = výchozí podle role */
+  permissions: text('permissions'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const auditLog = pgTable('audit_log', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+  userEmail: text('user_email').notNull(),
+  userDisplayName: text('user_display_name'),
+  action: text('action').notNull(),
+  entityType: text('entity_type'),
+  entityId: text('entity_id'),
+  summary: text('summary').notNull(),
+  metadata: text('metadata'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

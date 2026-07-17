@@ -3,6 +3,7 @@ import type { Context } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { getDb } from '../db/index.js';
 import { sessions, users } from '../db/schema.js';
+import { resolveEffectivePermissions, type Permission, type UserRole } from './permissions.js';
 
 export const SESSION_COOKIE = 'stage_session';
 const SESSION_DAYS = 30;
@@ -10,8 +11,28 @@ const SESSION_DAYS = 30;
 export type AuthUser = {
   id: string;
   email: string;
-  role: 'admin' | 'provoz' | 'ucetni';
+  displayName: string | null;
+  role: UserRole;
+  permissions: Permission[];
 };
+
+function toAuthUser(row: {
+  id: string;
+  email: string;
+  displayName: string | null;
+  role: UserRole;
+  permissions: string | null;
+  isActive: boolean;
+}): AuthUser | null {
+  if (!row.isActive) return null;
+  return {
+    id: row.id,
+    email: row.email,
+    displayName: row.displayName,
+    role: row.role,
+    permissions: resolveEffectivePermissions(row.role, row.permissions),
+  };
+}
 
 export async function getSessionUser(c: Context): Promise<AuthUser | null> {
   const sid = getCookie(c, SESSION_COOKIE);
@@ -21,7 +42,10 @@ export async function getSessionUser(c: Context): Promise<AuthUser | null> {
     .select({
       id: users.id,
       email: users.email,
+      displayName: users.displayName,
       role: users.role,
+      permissions: users.permissions,
+      isActive: users.isActive,
       expiresAt: sessions.expiresAt,
     })
     .from(sessions)
@@ -30,7 +54,7 @@ export async function getSessionUser(c: Context): Promise<AuthUser | null> {
     .limit(1);
   const row = rows[0];
   if (!row) return null;
-  return { id: row.id, email: row.email, role: row.role };
+  return toAuthUser(row);
 }
 
 export function setSessionCookie(c: Context, sessionId: string, expiresAt: Date): void {
@@ -63,4 +87,22 @@ export async function createSession(userId: string): Promise<{ sessionId: string
 export async function destroySession(sessionId: string): Promise<void> {
   const db = getDb();
   await db.delete(sessions).where(eq(sessions.id, sessionId));
+}
+
+export async function loadAuthUserById(userId: string): Promise<AuthUser | null> {
+  const db = getDb();
+  const [row] = await db
+    .select({
+      id: users.id,
+      email: users.email,
+      displayName: users.displayName,
+      role: users.role,
+      permissions: users.permissions,
+      isActive: users.isActive,
+    })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  if (!row) return null;
+  return toAuthUser(row);
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch, getApiBase } from '@/lib/api';
@@ -7,7 +7,8 @@ import { Label } from '@/app/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/components/ui/tabs';
 
-type MeResponse = { user: { id: string; email: string; role: string } | null };
+import { usePermissions } from '@/lib/usePermissions';
+import { defaultPathForUser } from '@/lib/loginRedirect';
 
 type Receipt = {
   id: string;
@@ -22,16 +23,23 @@ type Receipt = {
 export default function UcetniPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { data: me, isLoading: meLoading } = useQuery({
-    queryKey: ['me'],
-    queryFn: () => apiFetch<MeResponse>('/api/auth/me'),
-  });
+  const { user, isLoading: meLoading, canAccessUcetni, canAccessAdmin, canAccessProvoz, can } = usePermissions();
+
+  const defaultTab = useMemo(() => {
+    if (can('accounting.read')) return 'receipts';
+    if (can('accounting.contracts')) return 'contracts';
+    if (can('accounting.read')) return 'vpp';
+    return 'receipts';
+  }, [can]);
+
+  const [tab, setTab] = useState(defaultTab);
+  useEffect(() => setTab(defaultTab), [defaultTab]);
 
   useEffect(() => {
     if (meLoading) return;
-    if (!me?.user) navigate('/login', { replace: true });
-    else if (me.user.role === 'provoz') navigate('/provoz', { replace: true });
-  }, [me, meLoading, navigate]);
+    if (!user) navigate('/login', { replace: true });
+    else if (!canAccessUcetni) navigate(defaultPathForUser(user.role, user.permissions), { replace: true });
+  }, [user, meLoading, navigate, canAccessUcetni]);
 
   const [status, setStatus] = useState<'all' | 'pending' | 'booked'>('pending');
 
@@ -41,7 +49,7 @@ export default function UcetniPage() {
       const q = status === 'all' ? '' : `?status=${status}`;
       return apiFetch<{ receipts: Receipt[] }>(`/api/ucetni/receipts${q}`);
     },
-    enabled: Boolean(me?.user && (me.user.role === 'ucetni' || me.user.role === 'admin')),
+    enabled: Boolean(user && can('accounting.read')),
   });
 
   const contractsQuery = useQuery({
@@ -61,7 +69,7 @@ export default function UcetniPage() {
           hourlyRateCents: number;
         }[];
       }>('/api/ucetni/contracts'),
-    enabled: Boolean(me?.user && (me.user.role === 'ucetni' || me.user.role === 'admin')),
+    enabled: Boolean(user && can('accounting.contracts')),
   });
 
   const markContractSeen = useMutation({
@@ -83,7 +91,7 @@ export default function UcetniPage() {
           workedMinutesTotal: number;
         }[];
       }>('/api/ucetni/wage-payments'),
-    enabled: Boolean(me?.user && (me.user.role === 'ucetni' || me.user.role === 'admin')),
+    enabled: Boolean(user && can('accounting.read')),
   });
 
   const book = useMutation({
@@ -104,7 +112,7 @@ export default function UcetniPage() {
     window.open(`${base}/api/ucetni/export/wage-payments.csv`, '_blank');
   };
 
-  if (meLoading || !me?.user || me.user.role === 'provoz') {
+  if (meLoading || !user || !canAccessUcetni) {
     return <div className="p-8 text-center text-sm text-black/60">Načítání…</div>;
   }
 
@@ -113,9 +121,14 @@ export default function UcetniPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl tracking-tight">Účetní</h1>
         <div className="flex gap-2">
-          {me.user.role === 'admin' && (
+          {canAccessAdmin && (
             <Button variant="outline" type="button" onClick={() => navigate('/admin')}>
               Admin
+            </Button>
+          )}
+          {canAccessProvoz && (
+            <Button variant="outline" type="button" onClick={() => navigate('/provoz')}>
+              Provoz
             </Button>
           )}
           <Button variant="outline" type="button" onClick={() => navigate('/')}>
@@ -127,17 +140,20 @@ export default function UcetniPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="receipts">
+      <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
-          <TabsTrigger value="receipts">Účtenky</TabsTrigger>
+          {can('accounting.read') && <TabsTrigger value="receipts">Účtenky</TabsTrigger>}
+          {can('accounting.contracts') && (
           <TabsTrigger value="contracts">
             Smlouvy DPC
             {(contractsQuery.data?.contracts.length ?? 0) > 0 && (
               <span className="ml-1 text-amber-700">({contractsQuery.data?.contracts.length})</span>
             )}
           </TabsTrigger>
-          <TabsTrigger value="vpp">Výplaty / VPP</TabsTrigger>
+          )}
+          {can('accounting.read') && <TabsTrigger value="vpp">Výplaty / VPP</TabsTrigger>}
         </TabsList>
+        {can('accounting.read') && (
         <TabsContent value="receipts" className="space-y-4 mt-4">
           <div>
             <Label>Stav</Label>
@@ -163,7 +179,7 @@ export default function UcetniPage() {
                   {r.amountCents != null && <div>{Math.round(r.amountCents / 100)} Kč</div>}
                   {r.note && <div>{r.note}</div>}
                 </div>
-                {r.status === 'pending' && (
+                {r.status === 'pending' && can('accounting.book') && (
                   <Button size="sm" type="button" onClick={() => book.mutate(r.id)} disabled={book.isPending}>
                     Označit zaúčtováno
                   </Button>
@@ -172,6 +188,8 @@ export default function UcetniPage() {
             ))}
           </ul>
         </TabsContent>
+        )}
+        {can('accounting.contracts') && (
         <TabsContent value="contracts" className="space-y-4 mt-4">
           <p className="text-sm text-black/60">
             Nově aktivované smlouvy (digitální podpis nebo nahraný sken). Po zpracování označte jako zpracováno.
@@ -226,6 +244,8 @@ export default function UcetniPage() {
             ))}
           </ul>
         </TabsContent>
+        )}
+        {can('accounting.read') && (
         <TabsContent value="vpp" className="space-y-4 mt-4">
           <Button type="button" variant="outline" onClick={downloadCsv}>
             Export CSV (VPP)
@@ -257,6 +277,7 @@ export default function UcetniPage() {
             ))}
           </ul>
         </TabsContent>
+        )}
       </Tabs>
     </div>
   );

@@ -10,17 +10,19 @@ import {
   headerEvents,
 } from '../db/schema.js';
 import type { AuthUser } from '../lib/session.js';
-import { requireAuth, requireRole } from '../middleware/auth.js';
+import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { resolveMapEmbedUrlForSite } from '../lib/mapEmbedUrl.js';
 import { isR2Configured, presignPutObject, publicUrlForStorageKey } from '../lib/s3.js';
 import { DEFAULT_MENU_ICON_KEY, MENU_ICON_KEYS } from '../lib/menuIconKeys.js';
+import { auditAction, AUDIT_ACTIONS, writeAudit } from '../lib/auditLog.js';
+import { adminUsersRouter } from './adminUsers.js';
 
 export const adminRouter = new Hono<{ Variables: { user: AuthUser } }>();
 
 adminRouter.use('*', requireAuth);
-adminRouter.use('*', requireRole('admin'));
+adminRouter.route('/', adminUsersRouter);
 
-adminRouter.get('/settings', async (c) => {
+adminRouter.get('/settings', requirePermission('site.settings'), async (c) => {
   const db = getDb();
   const rows = await db.select().from(siteSettings);
   const settings: Record<string, unknown> = {};
@@ -41,21 +43,27 @@ const settingsPatchSchema = z.object({
   settings: z.record(z.unknown()),
 });
 
-adminRouter.patch('/settings', async (c) => {
+adminRouter.patch('/settings', requirePermission('site.settings'), async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = settingsPatchSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: 'Invalid body' }, 400);
+  const user = c.get('user');
   const db = getDb();
   for (const [key, val] of Object.entries(parsed.data.settings)) {
     const normalizedVal = key === 'map.embedUrl' ? resolveMapEmbedUrlForSite(val) : val;
-    // Always JSON-serialize so strings (e.g. IČ) are not stored as bare digits
-    // (which JSON.parse would read back as numbers and break admin JSON + strSetting).
     const value = JSON.stringify(normalizedVal);
     await db.insert(siteSettings).values({ key, value }).onConflictDoUpdate({
       target: siteSettings.key,
       set: { value },
     });
   }
+  await writeAudit({
+    user,
+    action: AUDIT_ACTIONS.site.settings,
+    entityType: 'site_settings',
+    summary: `Upravena nastavení webu (${Object.keys(parsed.data.settings).length} klíčů)`,
+    metadata: { keys: Object.keys(parsed.data.settings) },
+  });
   return c.json({ ok: true });
 });
 
@@ -71,13 +79,13 @@ const categorySchema = z.object({
   active: z.boolean().optional(),
 });
 
-adminRouter.get('/menu/categories', async (c) => {
+adminRouter.get('/menu/categories', requirePermission('site.menu'), async (c) => {
   const db = getDb();
   const rows = await db.select().from(menuCategories).orderBy(asc(menuCategories.sortOrder));
   return c.json({ categories: rows });
 });
 
-adminRouter.post('/menu/categories', async (c) => {
+adminRouter.post('/menu/categories', requirePermission('site.menu'), async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = categorySchema.safeParse(body);
   if (!parsed.success) return c.json({ error: 'Invalid body' }, 400);
@@ -94,10 +102,16 @@ adminRouter.post('/menu/categories', async (c) => {
       active: parsed.data.active ?? true,
     })
     .returning();
+  await auditAction(c, {
+    action: AUDIT_ACTIONS.site.menuCategoryCreate,
+    entityType: 'menu_category',
+    entityId: row!.id,
+    summary: `Nová kategorie menu: ${row!.nameCz}`,
+  });
   return c.json({ category: row }, 201);
 });
 
-adminRouter.patch('/menu/categories/:id', async (c) => {
+adminRouter.patch('/menu/categories/:id', requirePermission('site.menu'), async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json().catch(() => null);
   const parsed = categorySchema.partial().safeParse(body);
@@ -109,13 +123,27 @@ adminRouter.patch('/menu/categories/:id', async (c) => {
     .where(eq(menuCategories.id, id))
     .returning();
   if (!row) return c.json({ error: 'Not found' }, 404);
+  await auditAction(c, {
+    action: AUDIT_ACTIONS.site.menuCategoryUpdate,
+    entityType: 'menu_category',
+    entityId: id,
+    summary: `Upravena kategorie menu: ${row.nameCz}`,
+  });
   return c.json({ category: row });
 });
 
-adminRouter.delete('/menu/categories/:id', async (c) => {
+adminRouter.delete('/menu/categories/:id', requirePermission('site.menu'), async (c) => {
   const id = c.req.param('id');
   const db = getDb();
+  const [existing] = await db.select().from(menuCategories).where(eq(menuCategories.id, id)).limit(1);
+  if (!existing) return c.json({ error: 'Not found' }, 404);
   await db.delete(menuCategories).where(eq(menuCategories.id, id));
+  await auditAction(c, {
+    action: AUDIT_ACTIONS.site.menuCategoryDelete,
+    entityType: 'menu_category',
+    entityId: id,
+    summary: `Smazána kategorie menu: ${existing.nameCz}`,
+  });
   return c.json({ ok: true });
 });
 
@@ -132,13 +160,13 @@ const itemSchema = z.object({
   active: z.boolean().optional(),
 });
 
-adminRouter.get('/menu/items', async (c) => {
+adminRouter.get('/menu/items', requirePermission('site.menu'), async (c) => {
   const db = getDb();
   const rows = await db.select().from(menuItems).orderBy(asc(menuItems.sortOrder));
   return c.json({ items: rows });
 });
 
-adminRouter.post('/menu/items', async (c) => {
+adminRouter.post('/menu/items', requirePermission('site.menu'), async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = itemSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: 'Invalid body' }, 400);
@@ -158,10 +186,16 @@ adminRouter.post('/menu/items', async (c) => {
       active: parsed.data.active ?? true,
     })
     .returning();
+  await auditAction(c, {
+    action: AUDIT_ACTIONS.site.menuItemCreate,
+    entityType: 'menu_item',
+    entityId: row!.id,
+    summary: `Nová položka menu: ${row!.nameCz}`,
+  });
   return c.json({ item: row }, 201);
 });
 
-adminRouter.patch('/menu/items/:id', async (c) => {
+adminRouter.patch('/menu/items/:id', requirePermission('site.menu'), async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json().catch(() => null);
   const parsed = itemSchema.partial().safeParse(body);
@@ -173,13 +207,27 @@ adminRouter.patch('/menu/items/:id', async (c) => {
     .where(eq(menuItems.id, id))
     .returning();
   if (!row) return c.json({ error: 'Not found' }, 404);
+  await auditAction(c, {
+    action: AUDIT_ACTIONS.site.menuItemUpdate,
+    entityType: 'menu_item',
+    entityId: id,
+    summary: `Upravena položka menu: ${row.nameCz}`,
+  });
   return c.json({ item: row });
 });
 
-adminRouter.delete('/menu/items/:id', async (c) => {
+adminRouter.delete('/menu/items/:id', requirePermission('site.menu'), async (c) => {
   const id = c.req.param('id');
   const db = getDb();
+  const [existing] = await db.select().from(menuItems).where(eq(menuItems.id, id)).limit(1);
+  if (!existing) return c.json({ error: 'Not found' }, 404);
   await db.delete(menuItems).where(eq(menuItems.id, id));
+  await auditAction(c, {
+    action: AUDIT_ACTIONS.site.menuItemDelete,
+    entityType: 'menu_item',
+    entityId: id,
+    summary: `Smazána položka menu: ${existing.nameCz}`,
+  });
   return c.json({ ok: true });
 });
 
@@ -188,7 +236,7 @@ const uploadPresignSchema = z.object({
   mime: z.string().min(3),
 });
 
-adminRouter.post('/uploads/presign', async (c) => {
+adminRouter.post('/uploads/presign', requirePermission('site.menu'), async (c) => {
   if (!isR2Configured()) {
     return c.json({ error: 'Nahrávání není nakonfigurováno (R2)' }, 503);
   }
@@ -217,13 +265,13 @@ const gallerySchema = z.object({
   active: z.boolean().optional(),
 });
 
-adminRouter.get('/gallery', async (c) => {
+adminRouter.get('/gallery', requirePermission('site.gallery'), async (c) => {
   const db = getDb();
   const rows = await db.select().from(galleryImages).orderBy(asc(galleryImages.sortOrder));
   return c.json({ images: rows });
 });
 
-adminRouter.post('/gallery', async (c) => {
+adminRouter.post('/gallery', requirePermission('site.gallery'), async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = gallerySchema.safeParse(body);
   if (!parsed.success) return c.json({ error: 'Invalid body' }, 400);
@@ -238,10 +286,16 @@ adminRouter.post('/gallery', async (c) => {
       active: parsed.data.active ?? true,
     })
     .returning();
+  await auditAction(c, {
+    action: AUDIT_ACTIONS.site.galleryCreate,
+    entityType: 'gallery_image',
+    entityId: row!.id,
+    summary: 'Přidán obrázek do galerie',
+  });
   return c.json({ image: row }, 201);
 });
 
-adminRouter.patch('/gallery/:id', async (c) => {
+adminRouter.patch('/gallery/:id', requirePermission('site.gallery'), async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json().catch(() => null);
   const parsed = gallerySchema.partial().safeParse(body);
@@ -253,13 +307,27 @@ adminRouter.patch('/gallery/:id', async (c) => {
     .where(eq(galleryImages.id, id))
     .returning();
   if (!row) return c.json({ error: 'Not found' }, 404);
+  await auditAction(c, {
+    action: AUDIT_ACTIONS.site.galleryUpdate,
+    entityType: 'gallery_image',
+    entityId: id,
+    summary: 'Upraven obrázek v galerii',
+  });
   return c.json({ image: row });
 });
 
-adminRouter.delete('/gallery/:id', async (c) => {
+adminRouter.delete('/gallery/:id', requirePermission('site.gallery'), async (c) => {
   const id = c.req.param('id');
   const db = getDb();
+  const [existing] = await db.select().from(galleryImages).where(eq(galleryImages.id, id)).limit(1);
+  if (!existing) return c.json({ error: 'Not found' }, 404);
   await db.delete(galleryImages).where(eq(galleryImages.id, id));
+  await auditAction(c, {
+    action: AUDIT_ACTIONS.site.galleryDelete,
+    entityType: 'gallery_image',
+    entityId: id,
+    summary: 'Smazán obrázek z galerie',
+  });
   return c.json({ ok: true });
 });
 
@@ -274,7 +342,7 @@ const headerEventSchema = z.object({
   sortOrder: z.number().int().optional(),
 });
 
-adminRouter.get('/header-events', async (c) => {
+adminRouter.get('/header-events', requirePermission('site.events'), async (c) => {
   const month = c.req.query('month');
   const db = getDb();
   if (month && /^\d{4}-\d{2}$/.test(month)) {
@@ -293,7 +361,7 @@ adminRouter.get('/header-events', async (c) => {
   return c.json({ events: rows });
 });
 
-adminRouter.post('/header-events', async (c) => {
+adminRouter.post('/header-events', requirePermission('site.events'), async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = headerEventSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: 'Invalid body' }, 400);
@@ -311,10 +379,16 @@ adminRouter.post('/header-events', async (c) => {
       sortOrder: parsed.data.sortOrder ?? 0,
     })
     .returning();
+  await auditAction(c, {
+    action: AUDIT_ACTIONS.site.eventCreate,
+    entityType: 'header_event',
+    entityId: row!.id,
+    summary: `Nová akce v hlavičce: ${row!.titleCz} (${row!.eventDate})`,
+  });
   return c.json({ event: row }, 201);
 });
 
-adminRouter.patch('/header-events/:id', async (c) => {
+adminRouter.patch('/header-events/:id', requirePermission('site.events'), async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json().catch(() => null);
   const parsed = headerEventSchema.partial().safeParse(body);
@@ -326,12 +400,26 @@ adminRouter.patch('/header-events/:id', async (c) => {
     .where(eq(headerEvents.id, id))
     .returning();
   if (!row) return c.json({ error: 'Not found' }, 404);
+  await auditAction(c, {
+    action: AUDIT_ACTIONS.site.eventUpdate,
+    entityType: 'header_event',
+    entityId: id,
+    summary: `Upravena akce v hlavičce: ${row.titleCz}`,
+  });
   return c.json({ event: row });
 });
 
-adminRouter.delete('/header-events/:id', async (c) => {
+adminRouter.delete('/header-events/:id', requirePermission('site.events'), async (c) => {
   const id = c.req.param('id');
   const db = getDb();
+  const [existing] = await db.select().from(headerEvents).where(eq(headerEvents.id, id)).limit(1);
+  if (!existing) return c.json({ error: 'Not found' }, 404);
   await db.delete(headerEvents).where(eq(headerEvents.id, id));
+  await auditAction(c, {
+    action: AUDIT_ACTIONS.site.eventDelete,
+    entityType: 'header_event',
+    entityId: id,
+    summary: `Smazána akce v hlavičce: ${existing.titleCz}`,
+  });
   return c.json({ ok: true });
 });

@@ -18,7 +18,7 @@ import {
 
 import type { AuthUser } from '../lib/session.js';
 
-import { requireAuth, requireRole } from '../middleware/auth.js';
+import { requireAuth, requirePermission } from '../middleware/auth.js';
 
 import { isValidYmd } from '../lib/pragueDate.js';
 
@@ -28,6 +28,7 @@ import { parseDataUrl, putStorageBuffer } from '../lib/storage.js';
 import { buildMonthCalendar } from '../lib/staffCalendar.js';
 
 import { computeWorkedMinutes, formatTimeHm, parseHmOnDate } from '../lib/workedMinutes.js';
+import { auditAction, AUDIT_ACTIONS } from '../lib/auditLog.js';
 
 
 
@@ -80,8 +81,7 @@ dochazkaRouter.get('/day/:date', async (c) => {
 const protectedDochazka = new Hono<{ Variables: { user: AuthUser } }>();
 
 protectedDochazka.use('*', requireAuth);
-
-protectedDochazka.use('*', requireRole('admin', 'provoz'));
+protectedDochazka.use('*', requirePermission('staff.attendance'));
 
 
 
@@ -252,6 +252,22 @@ protectedDochazka.patch('/attendance/:assignmentId', async (c) => {
 
 
 
+  await auditAction(c, {
+
+    action: AUDIT_ACTIONS.staff.attendanceConfirm,
+
+    entityType: 'shift',
+
+    entityId: assignmentId,
+
+    summary: `Potvrzena docházka (portál) za ${row.shift.businessDate}`,
+
+    metadata: { workerId: row.worker.id, source: 'dochazka' },
+
+  });
+
+
+
   return c.json({ attendance: updated });
 
 });
@@ -359,6 +375,22 @@ protectedDochazka.post('/attendance/:assignmentId/confirm-planned', async (c) =>
     .where(eq(attendanceRecords.id, att.id))
 
     .returning();
+
+
+
+  await auditAction(c, {
+
+    action: AUDIT_ACTIONS.staff.attendanceConfirm,
+
+    entityType: 'shift',
+
+    entityId: assignmentId,
+
+    summary: `Rychlé potvrzení docházky za ${row.shift.businessDate}`,
+
+    metadata: { workerId: row.worker.id, source: 'dochazka_planned' },
+
+  });
 
 
 

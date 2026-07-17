@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { provozPathOrLogin } from '@/lib/loginRedirect';
+import { usePermissions } from '@/lib/usePermissions';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
@@ -11,7 +12,7 @@ import { SignaturePad } from '@/components/staff/SignaturePad';
 import { uploadSignaturePng } from '@/lib/staffUpload';
 import type { CalendarDay, MonthCalendar } from '@/types/staff';
 
-type MeResponse = { user: { id: string; email: string; role: string } | null };
+type MeResponse = import('@/lib/permissions').MeResponse;
 
 const MY_WORKER_KEY = 'dochazka-my-worker-id';
 
@@ -22,11 +23,12 @@ function telHref(phone: string) {
 export default function DochazkaPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const { can, canAccessAdmin } = usePermissions();
   const { data: me } = useQuery({
     queryKey: ['me'],
     queryFn: () => apiFetch<MeResponse>('/api/auth/me'),
   });
-  const isProvoz = Boolean(me?.user && (me.user.role === 'provoz' || me.user.role === 'admin'));
+  const canManageAttendance = can('staff.attendance');
 
   const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const parts = month.split('-').map(Number);
@@ -133,7 +135,7 @@ export default function DochazkaPage() {
   });
 
   const planHref = `/provoz/plan?month=${encodeURIComponent(month)}${selectedDate ? `&date=${selectedDate}` : ''}`;
-  const planLinkTo = provozPathOrLogin(planHref, isProvoz);
+  const planLinkTo = provozPathOrLogin(planHref, canManageAttendance);
 
   const handleMyWorkerChange = (id: string) => {
     setMyWorkerId(id);
@@ -153,12 +155,12 @@ export default function DochazkaPage() {
           <Button variant="outline" size="sm" type="button" asChild>
             <Link to={planLinkTo}>Plán směn</Link>
           </Button>
-          {isProvoz && (
+          {canManageAttendance && (
             <Button variant="outline" size="sm" type="button" onClick={() => navigate('/provoz/trzby')}>
               Provoz
             </Button>
           )}
-          {me?.user?.role === 'admin' && (
+          {canAccessAdmin && (
             <Button variant="outline" size="sm" type="button" onClick={() => navigate('/admin')}>
               Admin
             </Button>
@@ -212,7 +214,7 @@ export default function DochazkaPage() {
                 <Link
                   to={provozPathOrLogin(
                     `/provoz/plan?month=${encodeURIComponent(month)}&date=${selectedDate}`,
-                    isProvoz
+                    canManageAttendance
                   )}
                 >
                   Přidat směnu
@@ -275,7 +277,7 @@ export default function DochazkaPage() {
               <p className="text-sm text-black/50">Telefon není vyplněný.</p>
             )}
 
-            {isProvoz ? (
+            {canManageAttendance ? (
               <>
                 <div className="grid grid-cols-2 gap-2">
                   <div>

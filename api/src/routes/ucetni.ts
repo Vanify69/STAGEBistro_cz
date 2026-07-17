@@ -3,19 +3,24 @@ import { and, asc, desc, eq, gte, isNotNull, isNull, lte } from 'drizzle-orm';
 import { getDb } from '../db/index.js';
 import { expenseReceipts, wagePayments, workers } from '../db/schema.js';
 import type { AuthUser } from '../lib/session.js';
-import { requireAuth, requireRole } from '../middleware/auth.js';
+import { requireAuth } from '../middleware/auth.js';
 import {
   contractFileResponseHeaders,
   resolveWorkerContractFile,
 } from '../lib/contractStorage.js';
+import {
+  permAccountingRead,
+  permAccountingBook,
+  permAccountingContracts,
+} from '../lib/staffRoutePermissions.js';
+import { writeAudit, AUDIT_ACTIONS } from '../lib/auditLog.js';
 import { presignGetObject } from '../lib/s3.js';
 
 export const ucetniRouter = new Hono<{ Variables: { user: AuthUser } }>();
 
 ucetniRouter.use('*', requireAuth);
-ucetniRouter.use('*', requireRole('admin', 'ucetni'));
 
-ucetniRouter.get('/receipts', async (c) => {
+ucetniRouter.get('/receipts', permAccountingRead, async (c) => {
   const status = c.req.query('status');
   const from = c.req.query('from');
   const to = c.req.query('to');
@@ -40,7 +45,7 @@ ucetniRouter.get('/receipts', async (c) => {
   return c.json({ receipts: rows });
 });
 
-ucetniRouter.patch('/receipts/:id/book', async (c) => {
+ucetniRouter.patch('/receipts/:id/book', permAccountingBook, async (c) => {
   const id = c.req.param('id');
   const user = c.get('user');
   const db = getDb();
@@ -54,10 +59,17 @@ ucetniRouter.patch('/receipts/:id/book', async (c) => {
     .where(eq(expenseReceipts.id, id))
     .returning();
   if (!row) return c.json({ error: 'Not found' }, 404);
+  await writeAudit({
+    user,
+    action: AUDIT_ACTIONS.accounting.receiptBook,
+    entityType: 'expense_receipt',
+    entityId: id,
+    summary: `Účtenka zaúčtována (${row.category})`,
+  });
   return c.json({ receipt: row });
 });
 
-ucetniRouter.get('/contracts', async (c) => {
+ucetniRouter.get('/contracts', permAccountingContracts, async (c) => {
   const pendingOnly = c.req.query('pending') !== 'false';
   const db = getDb();
   const conditions = [
@@ -93,7 +105,7 @@ ucetniRouter.get('/contracts', async (c) => {
   });
 });
 
-ucetniRouter.get('/contracts/:workerId/file', async (c) => {
+ucetniRouter.get('/contracts/:workerId/file', permAccountingContracts, async (c) => {
   const workerId = c.req.param('workerId');
   const db = getDb();
   const [worker] = await db.select().from(workers).where(eq(workers.id, workerId)).limit(1);
@@ -114,8 +126,9 @@ ucetniRouter.get('/contracts/:workerId/file', async (c) => {
   });
 });
 
-ucetniRouter.patch('/contracts/:workerId/seen', async (c) => {
+ucetniRouter.patch('/contracts/:workerId/seen', permAccountingContracts, async (c) => {
   const workerId = c.req.param('workerId');
+  const user = c.get('user');
   const db = getDb();
   const [row] = await db
     .update(workers)
@@ -123,10 +136,17 @@ ucetniRouter.patch('/contracts/:workerId/seen', async (c) => {
     .where(eq(workers.id, workerId))
     .returning();
   if (!row) return c.json({ error: 'Not found' }, 404);
+  await writeAudit({
+    user,
+    action: AUDIT_ACTIONS.accounting.contractSeen,
+    entityType: 'worker',
+    entityId: workerId,
+    summary: `Smlouva DPC zpracována: ${row.firstName} ${row.lastName}`,
+  });
   return c.json({ ok: true });
 });
 
-ucetniRouter.get('/wage-payments', async (c) => {
+ucetniRouter.get('/wage-payments', permAccountingRead, async (c) => {
   const from = c.req.query('from');
   const to = c.req.query('to');
   const workerId = c.req.query('workerId');
@@ -163,7 +183,7 @@ ucetniRouter.get('/wage-payments', async (c) => {
   });
 });
 
-ucetniRouter.get('/wage-payments/:id/pdf-url', async (c) => {
+ucetniRouter.get('/wage-payments/:id/pdf-url', permAccountingRead, async (c) => {
   const id = c.req.param('id');
   const db = getDb();
   const [row] = await db.select().from(wagePayments).where(eq(wagePayments.id, id)).limit(1);
@@ -176,7 +196,7 @@ ucetniRouter.get('/wage-payments/:id/pdf-url', async (c) => {
   }
 });
 
-ucetniRouter.get('/export/wage-payments.csv', async (c) => {
+ucetniRouter.get('/export/wage-payments.csv', permAccountingRead, async (c) => {
   const from = c.req.query('from') ?? '';
   const to = c.req.query('to') ?? '';
   const db = getDb();

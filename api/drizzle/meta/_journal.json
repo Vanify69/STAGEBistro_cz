@@ -50,6 +50,13 @@
       "when": 1760140800000,
       "tag": "0006_worker_bank_insurance",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1762732800000,
+      "tag": "0007_users_permissions_audit",
+      "breakpoints": true
     }
   ]
 }
