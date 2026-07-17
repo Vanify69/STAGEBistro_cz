@@ -12,6 +12,7 @@ export default function WorkersListPage() {
   const { allowed } = useProvozAuth();
   const { permissions } = usePermissions();
   const canCreate = canManageWorkers(permissions);
+  const canViewWage = canCreate;
   const { data, isLoading } = useQuery({
     queryKey: ['provoz', 'workers'],
     queryFn: () => apiFetch<{ workers: Worker[] }>('/api/provoz/workers'),
@@ -52,7 +53,11 @@ export default function WorkersListPage() {
                 {w.firstName} {w.lastName}
               </p>
               <p className="text-xs text-black/60">
-                {w.position} · {(w.hourlyRateCents / 100).toFixed(0)} Kč/h ·{' '}
+                {w.position}
+                {canViewWage && w.hourlyRateCents != null
+                  ? ` · ${(w.hourlyRateCents / 100).toFixed(0)} Kč/h`
+                  : ''}
+                {w.phone ? ` · ${w.phone}` : ''} ·{' '}
                 <span className="capitalize">{w.status}</span>
               </p>
             </Link>

@@ -293,7 +293,7 @@ export default function WorkerDetailPage() {
 
       {!canEditWorker && (
         <p className="text-sm text-black/60">
-          {w.position} · {(w.hourlyRateCents / 100).toFixed(0)} Kč/h
+          {w.position}
           {w.phone ? ` · ${w.phone}` : ''}
         </p>
       )}
@@ -343,7 +343,7 @@ export default function WorkerDetailPage() {
           <Input defaultValue={w.position} onChange={(e) => setForm((x) => ({ ...x, position: e.target.value }))} />
           <Label>Mzda (Kč/h)</Label>
           <Input
-            defaultValue={String(w.hourlyRateCents / 100)}
+            defaultValue={String((w.hourlyRateCents ?? 0) / 100)}
             onChange={(e) => setForm((x) => ({ ...x, hourlyRateCents: kcToCents(e.target.value) }))}
           />
           <Label>Smlouva od</Label>

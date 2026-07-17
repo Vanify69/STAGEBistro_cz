@@ -56,6 +56,7 @@ import {
   permStaffPayments,
 } from '../lib/staffRoutePermissions.js';
 import { auditAction, AUDIT_ACTIONS, writeAudit } from '../lib/auditLog.js';
+import { hasPermission } from '../lib/permissions.js';
 
 export const provozStaffRouter = new Hono<{ Variables: { user: AuthUser } }>();
 
@@ -91,10 +92,15 @@ const shiftSchema = z.object({
   note: z.string().nullable().optional(),
 });
 
+function canViewWorkerWage(user: AuthUser): boolean {
+  return hasPermission(user.permissions, 'staff.workers');
+}
+
 function serializeWorker(
   w: typeof workers.$inferSelect,
-  extras?: { contractHasWorkerSignature?: boolean }
+  opts?: { contractHasWorkerSignature?: boolean; includeWage?: boolean }
 ) {
+  const includeWage = opts?.includeWage !== false;
   return {
     id: w.id,
     firstName: w.firstName,
@@ -107,7 +113,7 @@ function serializeWorker(
     healthInsurance: w.healthInsurance,
     position: w.position,
     workPlace: w.workPlace,
-    hourlyRateCents: w.hourlyRateCents,
+    ...(includeWage ? { hourlyRateCents: w.hourlyRateCents } : {}),
     contractStart: w.contractStart,
     contractEnd: w.contractEnd,
     status: w.status,
@@ -117,7 +123,7 @@ function serializeWorker(
     contractDownloadPath: w.contractPdfKey ? `/api/provoz/workers/${w.id}/contract/pdf` : null,
     contractFilePath: w.contractPdfKey ? `/api/provoz/workers/${w.id}/contract/file` : null,
     contractSignedAt: w.contractSignedAt,
-    contractHasWorkerSignature: extras?.contractHasWorkerSignature,
+    contractHasWorkerSignature: opts?.contractHasWorkerSignature,
     contractAccountingSeenAt: w.contractAccountingSeenAt,
     contractAccountingEmailedAt: w.contractAccountingEmailedAt,
     deletedAt: w.deletedAt,
@@ -126,9 +132,9 @@ function serializeWorker(
   };
 }
 
-async function serializeWorkerDetail(w: typeof workers.$inferSelect) {
+async function serializeWorkerDetail(w: typeof workers.$inferSelect, includeWage: boolean) {
   const contractHasWorkerSignature = await workerHasStoredSignature(w);
-  return serializeWorker(w, { contractHasWorkerSignature });
+  return serializeWorker(w, { contractHasWorkerSignature, includeWage });
 }
 
 async function maybeRefreshGeneratedContractPdf(
@@ -160,7 +166,7 @@ provozStaffRouter.get('/workers', permStaffWorkersRead, async (c) => {
     .from(workers)
     .where(deleted ? isNotNull(workers.deletedAt) : isNull(workers.deletedAt))
     .orderBy(asc(workers.lastName), asc(workers.firstName));
-  return c.json({ workers: rows.map((w) => serializeWorker(w)) });
+  return c.json({ workers: rows.map((w) => serializeWorker(w, { includeWage: canViewWorkerWage(c.get('user')) })) });
 });
 
 provozStaffRouter.post('/workers', permStaffWorkersWrite, async (c) => {
@@ -204,7 +210,7 @@ provozStaffRouter.get('/workers/:id', permStaffWorkersRead, async (c) => {
   const db = getDb();
   const [row] = await db.select().from(workers).where(eq(workers.id, id)).limit(1);
   if (!row) return c.json({ error: 'Not found' }, 404);
-  return c.json({ worker: await serializeWorkerDetail(row) });
+  return c.json({ worker: await serializeWorkerDetail(row, canViewWorkerWage(c.get('user'))) });
 });
 
 provozStaffRouter.patch('/workers/:id', permStaffWorkersWrite, async (c) => {
@@ -228,7 +234,7 @@ provozStaffRouter.patch('/workers/:id', permStaffWorkersWrite, async (c) => {
     summary: `Upraven brigádník: ${row.firstName} ${row.lastName}`,
   });
   const refreshed = await maybeRefreshGeneratedContractPdf(row);
-  return c.json({ worker: await serializeWorkerDetail(refreshed) });
+  return c.json({ worker: await serializeWorkerDetail(refreshed, canViewWorkerWage(c.get('user'))) });
 });
 
 provozStaffRouter.delete('/workers/:id', permStaffWorkersWrite, async (c) => {
@@ -246,7 +252,7 @@ provozStaffRouter.delete('/workers/:id', permStaffWorkersWrite, async (c) => {
     entityId: id,
     summary: `Brigádník přesunut do koše: ${row.firstName} ${row.lastName}`,
   });
-  return c.json({ worker: serializeWorker(row) });
+  return c.json({ worker: serializeWorker(row, { includeWage: canViewWorkerWage(c.get('user')) }) });
 });
 
 provozStaffRouter.post('/workers/:id/restore', permStaffWorkersWrite, async (c) => {
@@ -264,7 +270,7 @@ provozStaffRouter.post('/workers/:id/restore', permStaffWorkersWrite, async (c) 
     entityId: id,
     summary: `Brigádník obnoven z koše: ${row.firstName} ${row.lastName}`,
   });
-  return c.json({ worker: serializeWorker(row) });
+  return c.json({ worker: serializeWorker(row, { includeWage: canViewWorkerWage(c.get('user')) }) });
 });
 
 provozStaffRouter.get('/workers/:id/stats', permStaffWorkersRead, async (c) => {
@@ -297,7 +303,7 @@ provozStaffRouter.post('/workers/:id/contract/generate', permStaffContracts, asy
       entityId: id,
       summary: `Vygenerována smlouva DPC: ${worker.firstName} ${worker.lastName}`,
     });
-    return c.json({ worker: serializeWorker(row!) });
+    return c.json({ worker: serializeWorker(row!, { includeWage: canViewWorkerWage(c.get('user')) }) });
   } catch (err) {
     console.error('[contract/generate]', err);
     return c.json({ error: err instanceof Error ? err.message : 'Generovani smlouvy selhalo' }, 500);
@@ -369,7 +375,7 @@ provozStaffRouter.post('/workers/:id/contract/upload-scan', permStaffContracts, 
     entityId: id,
     summary: `Nahrán scan smlouvy: ${row!.firstName} ${row!.lastName}`,
   });
-  return c.json({ worker: serializeWorker(row!), accountingQueued: true, accountingEmailed: mail.emailed });
+  return c.json({ worker: serializeWorker(row!, { includeWage: canViewWorkerWage(c.get('user')) }), accountingQueued: true, accountingEmailed: mail.emailed });
 });
 
 provozStaffRouter.get('/workers/:id/contract/pdf', permStaffContracts, async (c) => {
@@ -482,7 +488,7 @@ provozStaffRouter.post('/workers/:id/contract/sign-worker', permStaffContracts, 
       metadata: { activeResign: isActiveResign },
     });
     return c.json({
-      worker: await serializeWorkerDetail(worker),
+      worker: await serializeWorkerDetail(worker, canViewWorkerWage(c.get('user'))),
       accountingQueued: !isActiveResign,
       accountingEmailed: mail.emailed,
       signatureAttached: isActiveResign,

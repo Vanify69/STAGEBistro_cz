@@ -12,7 +12,7 @@ export type Worker = {
   healthInsurance: string | null;
   position: string;
   workPlace: string;
-  hourlyRateCents: number;
+  hourlyRateCents?: number;
   contractStart: string | null;
   contractEnd: string | null;
   status: WorkerStatus;
