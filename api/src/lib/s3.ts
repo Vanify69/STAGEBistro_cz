@@ -20,6 +20,9 @@ export function getR2Client(): S3Client | null {
     endpoint,
     credentials: { accessKeyId, secretAccessKey },
     forcePathStyle: true,
+    // AWS SDK v3 default checksums break R2 browser presigned PUTs (CORS preflight fails).
+    requestChecksumCalculation: 'WHEN_REQUIRED',
+    responseChecksumValidation: 'WHEN_REQUIRED',
   });
 }
 
