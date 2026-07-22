@@ -294,7 +294,8 @@ adminRouter.post('/uploads', requirePermission('site.menu'), async (c) => {
     await putStorageBuffer(storageKey, bytes, mime);
   } catch (err) {
     console.error('[admin/uploads] R2 put failed', err);
-    return c.json({ error: 'Uložení souboru do R2 selhalo' }, 502);
+    const detail = err instanceof Error ? err.message : 'unknown';
+    return c.json({ error: `Uložení souboru do R2 selhalo: ${detail}` }, 502);
   }
   const publicUrl = publicUrlForStorageKey(storageKey);
   return c.json({ publicUrl, storageKey });
