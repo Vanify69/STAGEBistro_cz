@@ -264,7 +264,8 @@ adminRouter.post('/uploads', requirePermission('site.menu'), async (c) => {
     const body = await c.req.parseBody({ all: true });
     const purposeField = body['purpose'];
     if (typeof purposeField === 'string') purposeRaw = purposeField;
-    const file = body['file'];
+    const fileField = body['file'];
+    const file = Array.isArray(fileField) ? fileField[0] : fileField;
     if (!file || typeof file === 'string') {
       return c.json({ error: 'Chybí soubor (field file)' }, 400);
     }
