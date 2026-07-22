@@ -10,20 +10,43 @@ export function isR2Configured(): boolean {
   );
 }
 
+const CHECKSUM_HEADER_RE = /^x-amz-checksum(?:-|$)|^x-amz-sdk-checksum-algorithm$/i;
+
 export function getR2Client(): S3Client | null {
   const endpoint = process.env.R2_ENDPOINT;
   const accessKeyId = process.env.R2_ACCESS_KEY_ID;
   const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
   if (!endpoint || !accessKeyId || !secretAccessKey) return null;
-  return new S3Client({
+  const client = new S3Client({
     region: 'auto',
     endpoint,
     credentials: { accessKeyId, secretAccessKey },
     forcePathStyle: true,
-    // AWS SDK v3 default checksums break R2 browser presigned PUTs (CORS preflight fails).
+    // AWS SDK v3 default checksums break R2 (presigned browser PUT + CORS preflight).
     requestChecksumCalculation: 'WHEN_REQUIRED',
     responseChecksumValidation: 'WHEN_REQUIRED',
   });
+  // Belt-and-suspenders: strip checksum headers so they never land in signed URLs.
+  try {
+    client.middlewareStack.remove('flexibleChecksumsMiddleware');
+  } catch {
+    // Older SDKs may not register this middleware name.
+  }
+  client.middlewareStack.add(
+    (next) => async (args) => {
+      const request = args.request as { headers?: Record<string, string> };
+      if (request.headers) {
+        for (const key of Object.keys(request.headers)) {
+          if (CHECKSUM_HEADER_RE.test(key)) {
+            delete request.headers[key];
+          }
+        }
+      }
+      return next(args);
+    },
+    { step: 'build', name: 'stripR2IncompatibleChecksumHeaders', priority: 'high' }
+  );
+  return client;
 }
 
 export async function presignPutObject(key: string, contentType: string): Promise<string> {
