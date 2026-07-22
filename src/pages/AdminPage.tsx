@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { uploadAdminImage } from '@/lib/uploadImage';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
@@ -119,13 +120,33 @@ export default function AdminPage() {
   });
 
   const [newGalleryUrl, setNewGalleryUrl] = useState('');
+  const [galleryUploading, setGalleryUploading] = useState(false);
+  const [galleryUploadError, setGalleryUploadError] = useState<string | null>(null);
+  const galleryFileRef = useRef<HTMLInputElement>(null);
+
   const addGallery = useMutation({
-    mutationFn: () => apiFetch('/api/admin/gallery', { method: 'POST', body: JSON.stringify({ url: newGalleryUrl }) }),
+    mutationFn: (url: string) => apiFetch('/api/admin/gallery', { method: 'POST', body: JSON.stringify({ url }) }),
     onSuccess: () => {
       setNewGalleryUrl('');
+      setGalleryUploadError(null);
       qc.invalidateQueries({ queryKey: ['admin', 'gallery'] });
     },
   });
+
+  const onGalleryFile = async (file: File | undefined) => {
+    if (!file) return;
+    setGalleryUploadError(null);
+    setGalleryUploading(true);
+    try {
+      const url = await uploadAdminImage(file, 'gallery');
+      await addGallery.mutateAsync(url);
+    } catch (e) {
+      setGalleryUploadError(e instanceof Error ? e.message : 'Nahrání selhalo');
+    } finally {
+      setGalleryUploading(false);
+      if (galleryFileRef.current) galleryFileRef.current.value = '';
+    }
+  };
 
   if (isLoading || !user || !canAccessAdmin) {
     return <div className="p-8 text-center text-sm text-black/60">Načítání…</div>;
@@ -261,11 +282,45 @@ export default function AdminPage() {
 
         {can('site.gallery') && (
           <TabsContent value="gallery" className="mt-4 space-y-4">
-            <div className="flex gap-2">
-              <Input placeholder="URL obrázku" value={newGalleryUrl} onChange={(e) => setNewGalleryUrl(e.target.value)} />
-              <Button type="button" onClick={() => addGallery.mutate()} disabled={!newGalleryUrl || addGallery.isPending}>
-                Přidat
-              </Button>
+            <div className="space-y-2">
+              <Label>Přidat fotku</Label>
+              <div className="flex flex-wrap gap-2 items-center">
+                <input
+                  ref={galleryFileRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => void onGalleryFile(e.target.files?.[0])}
+                />
+                <Button
+                  type="button"
+                  disabled={galleryUploading || addGallery.isPending}
+                  onClick={() => galleryFileRef.current?.click()}
+                >
+                  {galleryUploading ? 'Nahrávám…' : 'Nahrát soubor'}
+                </Button>
+                <span className="text-xs text-black/50">nebo vložte URL</span>
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="URL obrázku"
+                  value={newGalleryUrl}
+                  onChange={(e) => setNewGalleryUrl(e.target.value)}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => addGallery.mutate(newGalleryUrl)}
+                  disabled={!newGalleryUrl.trim() || addGallery.isPending || galleryUploading}
+                >
+                  Přidat URL
+                </Button>
+              </div>
+              {(galleryUploadError || addGallery.isError) && (
+                <p className="text-sm text-red-600">
+                  {galleryUploadError ?? (addGallery.error as Error).message}
+                </p>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-2">
               {(galleryQuery.data?.images ?? []).map((img) => (

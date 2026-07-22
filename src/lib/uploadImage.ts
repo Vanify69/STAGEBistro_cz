@@ -1,6 +1,6 @@
 import { getApiBase } from '@/lib/api';
 
-type UploadPurpose = 'menu-item' | 'menu-category' | 'menu-hero';
+export type UploadPurpose = 'menu-item' | 'menu-category' | 'menu-hero' | 'gallery';
 
 /** Nahrání přes API (server → R2). Bez přímého PUT z prohlížeče = bez CORS na bucketu. */
 export async function uploadAdminImage(file: File, purpose: UploadPurpose): Promise<string> {

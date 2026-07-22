@@ -11,6 +11,7 @@ import {
 } from '../db/schema.js';
 import type { AuthUser } from '../lib/session.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
+import { hasAnyPermission } from '../lib/permissions.js';
 import { resolveMapEmbedUrlForSite } from '../lib/mapEmbedUrl.js';
 import { isR2Configured, publicUrlForStorageKey, normalizePublicMediaUrl } from '../lib/s3.js';
 import { putStorageBuffer } from '../lib/storage.js';
@@ -244,11 +245,11 @@ adminRouter.delete('/menu/items/:id', requirePermission('site.menu'), async (c) 
   return c.json({ ok: true });
 });
 
-const uploadPurposeSchema = z.enum(['menu-item', 'menu-category', 'menu-hero']);
+const uploadPurposeSchema = z.enum(['menu-item', 'menu-category', 'menu-hero', 'gallery']);
 const MAX_ADMIN_IMAGE_BYTES = 12 * 1024 * 1024;
 
 /** Starý klient (cached JS) volá presign — vrať JSON hlášku místo plain 404. */
-adminRouter.post('/uploads/presign', requirePermission('site.menu'), async (c) => {
+adminRouter.post('/uploads/presign', requirePermission('site.menu', 'site.gallery'), async (c) => {
   return c.json(
     {
       error:
@@ -259,7 +260,7 @@ adminRouter.post('/uploads/presign', requirePermission('site.menu'), async (c) =
 });
 
 /** Nahrání obrázku přes API → R2 (bez browser PUT / CORS na bucketu). */
-adminRouter.post('/uploads', requirePermission('site.menu'), async (c) => {
+adminRouter.post('/uploads', requirePermission('site.menu', 'site.gallery'), async (c) => {
   if (!isR2Configured()) {
     return c.json({ error: 'Nahrávání není nakonfigurováno (R2)' }, 503);
   }
@@ -290,8 +291,19 @@ adminRouter.post('/uploads', requirePermission('site.menu'), async (c) => {
 
   const purposeParsed = uploadPurposeSchema.safeParse(purposeRaw);
   if (!purposeParsed.success) {
-    return c.json({ error: 'Neplatný purpose (menu-item | menu-category | menu-hero)' }, 400);
+    return c.json({ error: 'Neplatný purpose (menu-item | menu-category | menu-hero | gallery)' }, 400);
   }
+
+  const user = c.get('user');
+  const purpose = purposeParsed.data;
+  if (purpose === 'gallery') {
+    if (!hasAnyPermission(user.permissions, ['site.gallery'])) {
+      return c.json({ error: 'Forbidden' }, 403);
+    }
+  } else if (!hasAnyPermission(user.permissions, ['site.menu'])) {
+    return c.json({ error: 'Forbidden' }, 403);
+  }
+
   if (!mime.startsWith('image/')) {
     return c.json({ error: 'Podporovány jsou jen obrázky' }, 400);
   }
@@ -301,7 +313,7 @@ adminRouter.post('/uploads', requirePermission('site.menu'), async (c) => {
   }
 
   const ext = mime.split('/')[1]?.replace('jpeg', 'jpg') ?? 'bin';
-  const storageKey = `${purposeParsed.data}/${crypto.randomUUID()}.${ext}`;
+  const storageKey = `${purpose}/${crypto.randomUUID()}.${ext}`;
   try {
     await putStorageBuffer(storageKey, bytes, mime);
   } catch (err) {

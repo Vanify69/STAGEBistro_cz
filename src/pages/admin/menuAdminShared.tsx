@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
 import { getMenuCategoryIcon, MENU_ICON_KEYS, MENU_ICON_LABELS, type MenuIconKey } from '@/lib/menuIcons';
-import { uploadAdminImage } from '@/lib/uploadImage';
+import { uploadAdminImage, type UploadPurpose } from '@/lib/uploadImage';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from '@/app/components/ui/select';
 
-export type PresignPurpose = 'menu-item' | 'menu-category' | 'menu-hero';
+export type PresignPurpose = Exclude<UploadPurpose, 'gallery'>;
 
 export type CategoryFormState = {
   slug: string;
