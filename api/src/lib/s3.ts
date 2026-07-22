@@ -15,15 +15,28 @@ export function isR2Configured(): boolean {
   );
 }
 
+/** Jen origin endpointu — žádná cesta / jméno bucketu v URL. */
+function normalizeR2Endpoint(raw: string): string {
+  const trimmed = raw.trim().replace(/\/+$/, '');
+  try {
+    const u = new URL(trimmed);
+    return `${u.protocol}//${u.host}`;
+  } catch {
+    return trimmed;
+  }
+}
+
 export function getR2Client(): S3Client | null {
-  const endpoint = process.env.R2_ENDPOINT?.replace(/\/+$/, '');
+  const endpointRaw = process.env.R2_ENDPOINT;
   const accessKeyId = process.env.R2_ACCESS_KEY_ID;
   const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
-  if (!endpoint || !accessKeyId || !secretAccessKey) return null;
+  if (!endpointRaw || !accessKeyId || !secretAccessKey) return null;
   return new S3Client({
     region: 'auto',
-    endpoint,
+    endpoint: normalizeR2Endpoint(endpointRaw),
     credentials: { accessKeyId, secretAccessKey },
+    // Bez path-style R2 často uloží objekt jako `{bucket}/{key}` místo `{key}`.
+    forcePathStyle: true,
   });
 }
 
@@ -31,7 +44,7 @@ function cleanObjectKey(key: string): string {
   return key.replace(/^\//, '');
 }
 
-/** Veřejná URL = R2_PUBLIC_BASE_URL + object key (bez přidávání jména bucketu). */
+/** Veřejná URL = R2_PUBLIC_BASE_URL + object key. */
 export function publicUrlForStorageKey(key: string): string {
   const base = process.env.R2_PUBLIC_BASE_URL?.replace(/\/+$/, '');
   if (!base) {
@@ -41,25 +54,11 @@ export function publicUrlForStorageKey(key: string): string {
 }
 
 /**
- * Legacy: staré uploady skončily pod `stagebistro/stagebistro/menu-…`
- * zatímco v DB je často jen `stagebistro/menu-…`. Nové URL (`menu-item/…`) nechává být.
+ * Legacy: když je v DB stará cesta se zanoreným `stagebistro/…`, nech ji.
+ * Nové uploady jdou na `menu-item/…` přímo.
  */
 export function normalizePublicMediaUrl(url: string | null | undefined): string | null {
   if (url == null || url === '') return url ?? null;
-  const base = process.env.R2_PUBLIC_BASE_URL?.replace(/\/+$/, '');
-  if (!base || !url.startsWith(`${base}/`)) return url;
-  const path = url.slice(base.length + 1).replace(/^\//, '');
-  // Už správně (nové i opravené legacy)
-  if (path.startsWith('menu-item/') || path.startsWith('menu-category/') || path.startsWith('menu-hero/')) {
-    return url;
-  }
-  if (path.startsWith('stagebistro/stagebistro/')) {
-    return url;
-  }
-  // DB má stagebistro/menu-item/... → soubor je na stagebistro/stagebistro/menu-item/...
-  if (/^stagebistro\/(menu-item|menu-category|menu-hero)\//.test(path)) {
-    return `${base}/stagebistro/${path}`;
-  }
   return url;
 }
 
@@ -88,6 +87,9 @@ export async function putObjectBuffer(
     throw new Error('R2 is not configured');
   }
   const objectKey = cleanObjectKey(key);
+  if (!objectKey || objectKey.includes('..')) {
+    throw new Error(`Neplatný storage key: ${key}`);
+  }
   await client.send(
     new PutObjectCommand({
       Bucket: bucket,
@@ -101,7 +103,7 @@ export async function putObjectBuffer(
     await client.send(new HeadObjectCommand({ Bucket: bucket, Key: objectKey }));
   } catch (err) {
     throw new Error(
-      `R2 upload nešel ověřit (HeadObject): ${err instanceof Error ? err.message : String(err)}`
+      `R2 upload nešel ověřit (HeadObject key=${objectKey}): ${err instanceof Error ? err.message : String(err)}`
     );
   }
 }
@@ -112,9 +114,8 @@ export async function getObjectBuffer(key: string): Promise<Uint8Array> {
   if (!bucket || !client) {
     throw new Error('R2 is not configured');
   }
-  const res = await client.send(
-    new GetObjectCommand({ Bucket: bucket, Key: cleanObjectKey(key) })
-  );
+  const objectKey = cleanObjectKey(key);
+  const res = await client.send(new GetObjectCommand({ Bucket: bucket, Key: objectKey }));
   const bytes = await res.Body?.transformToByteArray();
   if (!bytes) throw new Error('Empty object');
   return bytes;
