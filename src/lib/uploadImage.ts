@@ -1,23 +1,31 @@
-import { apiFetch } from '@/lib/api';
+import { getApiBase } from '@/lib/api';
 
-type PresignPurpose = 'menu-item' | 'menu-category' | 'menu-hero';
+type UploadPurpose = 'menu-item' | 'menu-category' | 'menu-hero';
 
-export async function uploadAdminImage(file: File, purpose: PresignPurpose): Promise<string> {
+/** Nahrání přes API (server → R2). Bez přímého PUT z prohlížeče = bez CORS na bucketu. */
+export async function uploadAdminImage(file: File, purpose: UploadPurpose): Promise<string> {
   const mime = file.type || 'image/jpeg';
-  const { uploadUrl, publicUrl } = await apiFetch<{ uploadUrl: string; publicUrl: string }>(
-    '/api/admin/uploads/presign',
-    {
-      method: 'POST',
-      body: JSON.stringify({ purpose, mime }),
-    }
-  );
-  const res = await fetch(uploadUrl, {
-    method: 'PUT',
-    body: file,
+  const base = getApiBase();
+  const res = await fetch(`${base}/api/admin/uploads?purpose=${encodeURIComponent(purpose)}`, {
+    method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': mime },
+    body: file,
   });
-  if (!res.ok) {
-    throw new Error(`Nahrání souboru selhalo (${res.status})`);
+  const text = await res.text();
+  let data: { publicUrl?: string; error?: string } | null = null;
+  if (text.trim()) {
+    try {
+      data = JSON.parse(text) as { publicUrl?: string; error?: string };
+    } catch {
+      throw new Error(`Nahrání selhalo (HTTP ${res.status})`);
+    }
   }
-  return publicUrl;
+  if (!res.ok) {
+    throw new Error(data?.error ?? `Nahrání selhalo (HTTP ${res.status})`);
+  }
+  if (!data?.publicUrl) {
+    throw new Error('API nevrátilo URL obrázku');
+  }
+  return data.publicUrl;
 }

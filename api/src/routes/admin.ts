@@ -12,7 +12,8 @@ import {
 import type { AuthUser } from '../lib/session.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { resolveMapEmbedUrlForSite } from '../lib/mapEmbedUrl.js';
-import { isR2Configured, presignPutObject, publicUrlForStorageKey } from '../lib/s3.js';
+import { isR2Configured, publicUrlForStorageKey } from '../lib/s3.js';
+import { putStorageBuffer } from '../lib/storage.js';
 import { DEFAULT_MENU_ICON_KEY, MENU_ICON_KEYS } from '../lib/menuIconKeys.js';
 import { auditAction, AUDIT_ACTIONS, writeAudit } from '../lib/auditLog.js';
 import { adminUsersRouter } from './adminUsers.js';
@@ -231,30 +232,45 @@ adminRouter.delete('/menu/items/:id', requirePermission('site.menu'), async (c) 
   return c.json({ ok: true });
 });
 
-const uploadPresignSchema = z.object({
-  purpose: z.enum(['menu-item', 'menu-category', 'menu-hero']),
-  mime: z.string().min(3),
-});
+const uploadPurposeSchema = z.enum(['menu-item', 'menu-category', 'menu-hero']);
+const MAX_ADMIN_IMAGE_BYTES = 12 * 1024 * 1024;
 
-adminRouter.post('/uploads/presign', requirePermission('site.menu'), async (c) => {
+/** Nahrání obrázku přes API → R2 (bez browser PUT / CORS na bucketu). */
+adminRouter.post('/uploads', requirePermission('site.menu'), async (c) => {
   if (!isR2Configured()) {
     return c.json({ error: 'Nahrávání není nakonfigurováno (R2)' }, 503);
   }
   if (!process.env.R2_PUBLIC_BASE_URL?.trim()) {
     return c.json({ error: 'Chybí R2_PUBLIC_BASE_URL pro veřejné URL obrázků' }, 503);
   }
-  const body = await c.req.json().catch(() => null);
-  const parsed = uploadPresignSchema.safeParse(body);
-  if (!parsed.success) return c.json({ error: 'Invalid body' }, 400);
-  const mime = parsed.data.mime;
+
+  const purposeRaw = c.req.query('purpose') ?? '';
+  const purposeParsed = uploadPurposeSchema.safeParse(purposeRaw);
+  if (!purposeParsed.success) {
+    return c.json({ error: 'Neplatný purpose (menu-item | menu-category | menu-hero)' }, 400);
+  }
+
+  const mime = (c.req.header('content-type') ?? '').split(';')[0]!.trim().toLowerCase() || 'image/jpeg';
   if (!mime.startsWith('image/')) {
     return c.json({ error: 'Podporovány jsou jen obrázky' }, 400);
   }
+
+  const bytes = new Uint8Array(await c.req.arrayBuffer());
+  if (bytes.length === 0) return c.json({ error: 'Prázdný soubor' }, 400);
+  if (bytes.length > MAX_ADMIN_IMAGE_BYTES) {
+    return c.json({ error: 'Soubor je příliš velký (max 12 MB)' }, 400);
+  }
+
   const ext = mime.split('/')[1]?.replace('jpeg', 'jpg') ?? 'bin';
-  const storageKey = `stagebistro/${parsed.data.purpose}/${crypto.randomUUID()}.${ext}`;
-  const uploadUrl = await presignPutObject(storageKey, mime);
+  const storageKey = `stagebistro/${purposeParsed.data}/${crypto.randomUUID()}.${ext}`;
+  try {
+    await putStorageBuffer(storageKey, bytes, mime);
+  } catch (err) {
+    console.error('[admin/uploads] R2 put failed', err);
+    return c.json({ error: 'Uložení souboru do R2 selhalo' }, 502);
+  }
   const publicUrl = publicUrlForStorageKey(storageKey);
-  return c.json({ uploadUrl, publicUrl, storageKey });
+  return c.json({ publicUrl, storageKey });
 });
 
 const gallerySchema = z.object({
