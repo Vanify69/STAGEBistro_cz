@@ -11,6 +11,7 @@ import {
 import { todayPragueYmd } from '../lib/pragueDate.js';
 import { publicRateLimit } from '../middleware/rateLimit.js';
 import { resolveMapEmbedUrlForSite } from '../lib/mapEmbedUrl.js';
+import { normalizePublicMediaUrl } from '../lib/s3.js';
 
 export const publicRouter = new Hono();
 
@@ -51,6 +52,9 @@ publicRouter.get('/site', publicRateLimit, async (c) => {
   settings['map.embedUrl'] = resolveMapEmbedUrlForSite(
     'map.embedUrl' in settings ? settings['map.embedUrl'] : ''
   );
+  if (typeof settings['menu.heroImageUrl'] === 'string') {
+    settings['menu.heroImageUrl'] = normalizePublicMediaUrl(settings['menu.heroImageUrl']);
+  }
 
   const cats = categories.map((cat) => ({
     id: cat.id,
@@ -58,7 +62,7 @@ publicRouter.get('/site', publicRateLimit, async (c) => {
     nameCz: cat.nameCz,
     nameEn: cat.nameEn,
     iconKey: cat.iconKey,
-    imageUrl: cat.imageUrl,
+    imageUrl: normalizePublicMediaUrl(cat.imageUrl),
     sortOrder: cat.sortOrder,
     items: items
       .filter((i) => i.categoryId === cat.id)
@@ -70,7 +74,7 @@ publicRouter.get('/site', publicRateLimit, async (c) => {
         descEn: i.descEn,
         priceCents: i.priceCents,
         allergenCodes: i.allergenCodes,
-        imageUrl: i.imageUrl,
+        imageUrl: normalizePublicMediaUrl(i.imageUrl),
         sortOrder: i.sortOrder,
       })),
   }));
@@ -81,7 +85,7 @@ publicRouter.get('/site', publicRateLimit, async (c) => {
     menu: cats,
     gallery: gallery.map((g) => ({
       id: g.id,
-      url: g.url,
+      url: normalizePublicMediaUrl(g.url) ?? g.url,
       altCz: g.altCz,
       altEn: g.altEn,
       sortOrder: g.sortOrder,
