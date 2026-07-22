@@ -301,7 +301,7 @@ adminRouter.post('/uploads', requirePermission('site.menu'), async (c) => {
   }
 
   const ext = mime.split('/')[1]?.replace('jpeg', 'jpg') ?? 'bin';
-  const storageKey = `stagebistro/${purposeParsed.data}/${crypto.randomUUID()}.${ext}`;
+  const storageKey = `${purposeParsed.data}/${crypto.randomUUID()}.${ext}`;
   try {
     await putStorageBuffer(storageKey, bytes, mime);
   } catch (err) {
