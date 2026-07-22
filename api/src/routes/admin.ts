@@ -12,7 +12,7 @@ import {
 import type { AuthUser } from '../lib/session.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { resolveMapEmbedUrlForSite } from '../lib/mapEmbedUrl.js';
-import { isR2Configured, publicUrlForStorageKey } from '../lib/s3.js';
+import { isR2Configured, publicUrlForStorageKey, normalizePublicMediaUrl } from '../lib/s3.js';
 import { putStorageBuffer } from '../lib/storage.js';
 import { DEFAULT_MENU_ICON_KEY, MENU_ICON_KEYS } from '../lib/menuIconKeys.js';
 import { auditAction, AUDIT_ACTIONS, writeAudit } from '../lib/auditLog.js';
@@ -22,6 +22,10 @@ export const adminRouter = new Hono<{ Variables: { user: AuthUser } }>();
 
 adminRouter.use('*', requireAuth);
 adminRouter.route('/', adminUsersRouter);
+
+function withNormalizedImageUrl<T extends { imageUrl?: string | null }>(row: T): T {
+  return { ...row, imageUrl: normalizePublicMediaUrl(row.imageUrl ?? null) };
+}
 
 adminRouter.get('/settings', requirePermission('site.settings'), async (c) => {
   const db = getDb();
@@ -83,7 +87,7 @@ const categorySchema = z.object({
 adminRouter.get('/menu/categories', requirePermission('site.menu'), async (c) => {
   const db = getDb();
   const rows = await db.select().from(menuCategories).orderBy(asc(menuCategories.sortOrder));
-  return c.json({ categories: rows });
+  return c.json({ categories: rows.map(withNormalizedImageUrl) });
 });
 
 adminRouter.post('/menu/categories', requirePermission('site.menu'), async (c) => {
@@ -99,7 +103,7 @@ adminRouter.post('/menu/categories', requirePermission('site.menu'), async (c) =
       nameCz: parsed.data.nameCz,
       nameEn: parsed.data.nameEn,
       iconKey: parsed.data.iconKey ?? DEFAULT_MENU_ICON_KEY,
-      imageUrl: parsed.data.imageUrl ?? null,
+      imageUrl: normalizePublicMediaUrl(parsed.data.imageUrl ?? null),
       active: parsed.data.active ?? true,
     })
     .returning();
@@ -109,7 +113,7 @@ adminRouter.post('/menu/categories', requirePermission('site.menu'), async (c) =
     entityId: row!.id,
     summary: `Nová kategorie menu: ${row!.nameCz}`,
   });
-  return c.json({ category: row }, 201);
+  return c.json({ category: withNormalizedImageUrl(row!) }, 201);
 });
 
 adminRouter.patch('/menu/categories/:id', requirePermission('site.menu'), async (c) => {
@@ -118,9 +122,13 @@ adminRouter.patch('/menu/categories/:id', requirePermission('site.menu'), async 
   const parsed = categorySchema.partial().safeParse(body);
   if (!parsed.success) return c.json({ error: 'Invalid body' }, 400);
   const db = getDb();
+  const data = { ...parsed.data };
+  if ('imageUrl' in data) {
+    data.imageUrl = normalizePublicMediaUrl(data.imageUrl ?? null);
+  }
   const [row] = await db
     .update(menuCategories)
-    .set({ ...parsed.data })
+    .set(data)
     .where(eq(menuCategories.id, id))
     .returning();
   if (!row) return c.json({ error: 'Not found' }, 404);
@@ -130,7 +138,7 @@ adminRouter.patch('/menu/categories/:id', requirePermission('site.menu'), async 
     entityId: id,
     summary: `Upravena kategorie menu: ${row.nameCz}`,
   });
-  return c.json({ category: row });
+  return c.json({ category: withNormalizedImageUrl(row) });
 });
 
 adminRouter.delete('/menu/categories/:id', requirePermission('site.menu'), async (c) => {
@@ -164,7 +172,7 @@ const itemSchema = z.object({
 adminRouter.get('/menu/items', requirePermission('site.menu'), async (c) => {
   const db = getDb();
   const rows = await db.select().from(menuItems).orderBy(asc(menuItems.sortOrder));
-  return c.json({ items: rows });
+  return c.json({ items: rows.map(withNormalizedImageUrl) });
 });
 
 adminRouter.post('/menu/items', requirePermission('site.menu'), async (c) => {
@@ -183,7 +191,7 @@ adminRouter.post('/menu/items', requirePermission('site.menu'), async (c) => {
       descEn: parsed.data.descEn ?? null,
       priceCents: parsed.data.priceCents,
       allergenCodes: parsed.data.allergenCodes ?? null,
-      imageUrl: parsed.data.imageUrl ?? null,
+      imageUrl: normalizePublicMediaUrl(parsed.data.imageUrl ?? null),
       active: parsed.data.active ?? true,
     })
     .returning();
@@ -193,7 +201,7 @@ adminRouter.post('/menu/items', requirePermission('site.menu'), async (c) => {
     entityId: row!.id,
     summary: `Nová položka menu: ${row!.nameCz}`,
   });
-  return c.json({ item: row }, 201);
+  return c.json({ item: withNormalizedImageUrl(row!) }, 201);
 });
 
 adminRouter.patch('/menu/items/:id', requirePermission('site.menu'), async (c) => {
@@ -202,9 +210,13 @@ adminRouter.patch('/menu/items/:id', requirePermission('site.menu'), async (c) =
   const parsed = itemSchema.partial().safeParse(body);
   if (!parsed.success) return c.json({ error: 'Invalid body' }, 400);
   const db = getDb();
+  const data = { ...parsed.data };
+  if ('imageUrl' in data) {
+    data.imageUrl = normalizePublicMediaUrl(data.imageUrl ?? null);
+  }
   const [row] = await db
     .update(menuItems)
-    .set({ ...parsed.data })
+    .set(data)
     .where(eq(menuItems.id, id))
     .returning();
   if (!row) return c.json({ error: 'Not found' }, 404);
@@ -214,7 +226,7 @@ adminRouter.patch('/menu/items/:id', requirePermission('site.menu'), async (c) =
     entityId: id,
     summary: `Upravena položka menu: ${row.nameCz}`,
   });
-  return c.json({ item: row });
+  return c.json({ item: withNormalizedImageUrl(row) });
 });
 
 adminRouter.delete('/menu/items/:id', requirePermission('site.menu'), async (c) => {
