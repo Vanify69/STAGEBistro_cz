@@ -5,7 +5,7 @@ import { motion } from 'motion/react';
 import { format, parseISO } from 'date-fns';
 import { cs, enUS } from 'date-fns/locale';
 import { Instagram, Facebook, ChevronDown, Star } from 'lucide-react';
-import { getMenuCategoryIcon } from '@/lib/menuIcons';
+import { MenuCategoryIcon } from '@/components/MenuCategoryIcon';
 import LogoImage from '../imports/Logo_web.png';
 import { apiFetch } from '@/lib/api';
 import type { PublicSitePayload } from '@/types/publicSite';
@@ -350,7 +350,6 @@ export default function HomePage() {
           )}
 
           {(data?.menu ?? []).map((cat) => {
-            const Icon = getMenuCategoryIcon(cat.iconKey);
             const catName = lang === 'cz' ? cat.nameCz : cat.nameEn;
             return (
               <div key={cat.id} className="mb-16">
@@ -360,7 +359,7 @@ export default function HomePage() {
                   </div>
                 )}
                 <h3 className="text-2xl sm:text-3xl mb-8 tracking-tight flex items-center gap-3">
-                  <Icon className="w-8 h-8" />
+                  <MenuCategoryIcon iconKey={cat.iconKey} className="w-8 h-8" />
                   {catName}
                 </h3>
                 <div className="space-y-8">

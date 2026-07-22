@@ -73,7 +73,10 @@ adminRouter.patch('/settings', requirePermission('site.settings'), async (c) => 
   return c.json({ ok: true });
 });
 
-const menuIconKeySchema = z.enum(MENU_ICON_KEYS);
+const menuIconKeySchema = z.union([
+  z.enum(MENU_ICON_KEYS),
+  z.string().url().refine((u) => /^https?:\/\//i.test(u), 'Ikona musí být http(s) URL'),
+]);
 
 const categorySchema = z.object({
   slug: z.string().min(1),
@@ -245,7 +248,7 @@ adminRouter.delete('/menu/items/:id', requirePermission('site.menu'), async (c) 
   return c.json({ ok: true });
 });
 
-const uploadPurposeSchema = z.enum(['menu-item', 'menu-category', 'menu-hero', 'gallery']);
+const uploadPurposeSchema = z.enum(['menu-item', 'menu-category', 'menu-hero', 'gallery', 'menu-icon']);
 const MAX_ADMIN_IMAGE_BYTES = 12 * 1024 * 1024;
 
 /** Starý klient (cached JS) volá presign — vrať JSON hlášku místo plain 404. */
@@ -291,7 +294,7 @@ adminRouter.post('/uploads', requirePermission('site.menu', 'site.gallery'), asy
 
   const purposeParsed = uploadPurposeSchema.safeParse(purposeRaw);
   if (!purposeParsed.success) {
-    return c.json({ error: 'Neplatný purpose (menu-item | menu-category | menu-hero | gallery)' }, 400);
+    return c.json({ error: 'Neplatný purpose (menu-item | menu-category | menu-hero | gallery | menu-icon)' }, 400);
   }
 
   const user = c.get('user');

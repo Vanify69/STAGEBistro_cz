@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
-import { getMenuCategoryIcon, MENU_ICON_KEYS, MENU_ICON_LABELS, type MenuIconKey } from '@/lib/menuIcons';
+import { getMenuCategoryIcon, isCustomMenuIcon, MENU_ICON_KEYS, MENU_ICON_LABELS, type MenuIconKey } from '@/lib/menuIcons';
 import { uploadAdminImage, type UploadPurpose } from '@/lib/uploadImage';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
@@ -19,7 +19,8 @@ export type CategoryFormState = {
   slug: string;
   nameCz: string;
   nameEn: string;
-  iconKey: MenuIconKey;
+  /** Lucide klíč (beef, soup, …) nebo URL nahrané ikony. */
+  iconKey: string;
   imageUrl: string;
   active: boolean;
 };
@@ -147,18 +148,54 @@ export function ImageUrlField({
   );
 }
 
-export function IconPicker({ value, onChange }: { value: MenuIconKey; onChange: (k: MenuIconKey) => void }) {
-  const Icon = getMenuCategoryIcon(value);
+export function IconPicker({ value, onChange }: { value: string; onChange: (k: string) => void }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const isCustom = isCustomMenuIcon(value);
+  const selectValue = !isCustom && MENU_ICON_KEYS.includes(value as MenuIconKey) ? value : 'star';
+  const Icon = getMenuCategoryIcon(selectValue);
+
+  const onFile = async (file: File | undefined) => {
+    if (!file) return;
+    setUploadError(null);
+    setUploading(true);
+    try {
+      const url = await uploadAdminImage(file, 'menu-icon');
+      onChange(url);
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : 'Nahrání selhalo');
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
   return (
     <div className="space-y-2">
       <Label>Ikona u nadpisu</Label>
       <div className="flex items-center gap-3">
-        <Icon className="w-8 h-8" />
-        <Select value={value} onValueChange={(v) => onChange(v as MenuIconKey)}>
+        {isCustom ? (
+          <img src={value} alt="" className="w-8 h-8 object-contain" />
+        ) : (
+          <Icon className="w-8 h-8" />
+        )}
+        <Select
+          value={isCustom ? '__custom__' : selectValue}
+          onValueChange={(v) => {
+            if (v === '__custom__') return;
+            onChange(v);
+          }}
+        >
           <SelectTrigger className="flex-1">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
+            {isCustom && (
+              <SelectItem value="__custom__" disabled>
+                Vlastní nahraná ikona
+              </SelectItem>
+            )}
             {MENU_ICON_KEYS.map((key) => (
               <SelectItem key={key} value={key}>
                 {MENU_ICON_LABELS[key]}
@@ -167,6 +204,24 @@ export function IconPicker({ value, onChange }: { value: MenuIconKey; onChange: 
           </SelectContent>
         </Select>
       </div>
+      <div className="flex flex-wrap gap-2 items-center">
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => void onFile(e.target.files?.[0])}
+        />
+        <Button type="button" variant="outline" size="sm" disabled={uploading} onClick={() => fileRef.current?.click()}>
+          {uploading ? 'Nahrávám…' : 'Nahrát vlastní ikonu'}
+        </Button>
+        {isCustom && (
+          <Button type="button" variant="ghost" size="sm" onClick={() => onChange('star')}>
+            Použít výchozí ikonu
+          </Button>
+        )}
+      </div>
+      {uploadError && <p className="text-xs text-red-600">{uploadError}</p>}
     </div>
   );
 }

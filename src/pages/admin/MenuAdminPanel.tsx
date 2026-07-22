@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, ChevronUp, ExternalLink, Pencil, Plus, Trash2 } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
-import { getMenuCategoryIcon, MENU_ICON_KEYS, type MenuIconKey } from '@/lib/menuIcons';
+import { MENU_ICON_KEYS, isCustomMenuIcon, type MenuIconKey } from '@/lib/menuIcons';
+import { MenuCategoryIcon } from '@/components/MenuCategoryIcon';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
@@ -254,7 +255,9 @@ export function MenuAdminPanel() {
       slug: c.slug,
       nameCz: c.nameCz,
       nameEn: c.nameEn,
-      iconKey: (MENU_ICON_KEYS.includes(c.iconKey as MenuIconKey) ? c.iconKey : 'star') as MenuIconKey,
+      iconKey: isCustomMenuIcon(c.iconKey)
+        ? c.iconKey
+        : ((MENU_ICON_KEYS.includes(c.iconKey as MenuIconKey) ? c.iconKey : 'star') as string),
       imageUrl: c.imageUrl ?? '',
       active: c.active,
     });
@@ -321,7 +324,6 @@ export function MenuAdminPanel() {
 
       <div className="space-y-4">
         {categories.map((cat, catIdx) => {
-          const Icon = getMenuCategoryIcon(cat.iconKey);
           const catItems = itemsByCategory.get(cat.id) ?? [];
           const isOpen = expanded[cat.id] !== false;
           return (
@@ -338,7 +340,7 @@ export function MenuAdminPanel() {
                 >
                   {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                 </button>
-                <Icon className="w-5 h-5 shrink-0" />
+                <MenuCategoryIcon iconKey={cat.iconKey} className="w-5 h-5 shrink-0" />
                 <span className="font-medium flex-1 min-w-0 truncate">{cat.nameCz}</span>
                 <span className="text-xs text-black/50">{cat.slug}</span>
                 <div className="flex items-center gap-1 text-xs">

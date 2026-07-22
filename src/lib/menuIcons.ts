@@ -71,3 +71,8 @@ export function getMenuCategoryIcon(iconKey: string): LucideIcon {
   }
   return Star;
 }
+
+/** Vlastní ikona nahraná na R2 (URL), jinak vestavěný Lucide klíč. */
+export function isCustomMenuIcon(iconKey: string): boolean {
+  return /^https?:\/\//i.test(iconKey.trim());
+}
