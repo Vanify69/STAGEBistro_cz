@@ -235,6 +235,17 @@ adminRouter.delete('/menu/items/:id', requirePermission('site.menu'), async (c) 
 const uploadPurposeSchema = z.enum(['menu-item', 'menu-category', 'menu-hero']);
 const MAX_ADMIN_IMAGE_BYTES = 12 * 1024 * 1024;
 
+/** Starý klient (cached JS) volá presign — vrať JSON hlášku místo plain 404. */
+adminRouter.post('/uploads/presign', requirePermission('site.menu'), async (c) => {
+  return c.json(
+    {
+      error:
+        'Nahrávání bylo změněno. Obnovte stránku pomocí Ctrl+Shift+R (nebo vyčistěte cache) a nahrajte fotku znovu.',
+    },
+    410
+  );
+});
+
 /** Nahrání obrázku přes API → R2 (bez browser PUT / CORS na bucketu). */
 adminRouter.post('/uploads', requirePermission('site.menu'), async (c) => {
   if (!isR2Configured()) {
@@ -244,18 +255,33 @@ adminRouter.post('/uploads', requirePermission('site.menu'), async (c) => {
     return c.json({ error: 'Chybí R2_PUBLIC_BASE_URL pro veřejné URL obrázků' }, 503);
   }
 
-  const purposeRaw = c.req.query('purpose') ?? '';
+  const contentType = (c.req.header('content-type') ?? '').toLowerCase();
+  let purposeRaw = c.req.query('purpose') ?? '';
+  let mime = 'image/jpeg';
+  let bytes: Uint8Array;
+
+  if (contentType.includes('multipart/form-data')) {
+    const body = await c.req.parseBody({ all: true });
+    const purposeField = body['purpose'];
+    if (typeof purposeField === 'string') purposeRaw = purposeField;
+    const file = body['file'];
+    if (!file || typeof file === 'string') {
+      return c.json({ error: 'Chybí soubor (field file)' }, 400);
+    }
+    mime = (file.type || 'image/jpeg').split(';')[0]!.trim().toLowerCase() || 'image/jpeg';
+    bytes = new Uint8Array(await file.arrayBuffer());
+  } else {
+    mime = contentType.split(';')[0]!.trim() || 'image/jpeg';
+    bytes = new Uint8Array(await c.req.arrayBuffer());
+  }
+
   const purposeParsed = uploadPurposeSchema.safeParse(purposeRaw);
   if (!purposeParsed.success) {
     return c.json({ error: 'Neplatný purpose (menu-item | menu-category | menu-hero)' }, 400);
   }
-
-  const mime = (c.req.header('content-type') ?? '').split(';')[0]!.trim().toLowerCase() || 'image/jpeg';
   if (!mime.startsWith('image/')) {
     return c.json({ error: 'Podporovány jsou jen obrázky' }, 400);
   }
-
-  const bytes = new Uint8Array(await c.req.arrayBuffer());
   if (bytes.length === 0) return c.json({ error: 'Prázdný soubor' }, 400);
   if (bytes.length > MAX_ADMIN_IMAGE_BYTES) {
     return c.json({ error: 'Soubor je příliš velký (max 12 MB)' }, 400);
