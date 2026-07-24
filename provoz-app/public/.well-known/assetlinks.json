@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "cz.stagebistro.provoz",
+        "sha256_cert_fingerprints": ["5F:08:8F:B2:8D:AE:73:7C:D0:DB:34:5D:0F:6E:58:B0:9E:D9:67:8F:40:DD:CD:03:9F:01:D9:BF:13:19:1E:2D"]
+      }
+    }]

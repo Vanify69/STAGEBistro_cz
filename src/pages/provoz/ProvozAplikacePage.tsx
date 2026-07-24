@@ -3,6 +3,8 @@ import { Button } from '@/app/components/ui/button';
 import { usePermissions } from '@/lib/usePermissions';
 import { canAccessProvoz } from '@/lib/permissions';
 
+const ANDROID_APK_URL = '/downloads/stage-provoz.apk';
+
 function getProvozAppUrl(): string {
   const fromEnv = (import.meta.env.VITE_PROVOZ_APP_URL as string | undefined)?.trim();
   if (fromEnv) {
@@ -58,23 +60,46 @@ export default function ProvozAplikacePage() {
         <div>
           <h2 className="text-xl font-medium tracking-tight">Mobilní aplikace Provoz</h2>
           <p className="mt-2 text-sm text-black/60">
-            Samostatná appka jen na objednávky surovin a focení účtenek. Nainstalujete ji z telefonu
-            (PWA) — není v App Store / Google Play.
+            Interní appka na objednávky surovin a focení účtenek. Není v App Store / Google Play —
+            instaluje se přímo odsud.
           </p>
         </div>
         <Button type="button" className="h-12 w-full" asChild>
           <a href={appUrl} target="_blank" rel="noreferrer">
-            Otevřít aplikaci
+            Otevřít v prohlížeči
           </a>
         </Button>
       </section>
 
       <section className="space-y-3 border border-black/10 p-4">
-        <h3 className="font-medium">QR kód na telefon</h3>
+        <h3 className="font-medium">Android — stáhnout APK</h3>
+        <p className="text-sm text-black/60">
+          Doporučená cesta pro telefony s Androidem: nainstalujete klasickou aplikaci (ikona bez
+          odznaku Chrome).
+        </p>
+        <Button type="button" className="h-12 w-full" asChild>
+          <a href={ANDROID_APK_URL} download="stage-provoz.apk">
+            Stáhnout Provoz.apk
+          </a>
+        </Button>
+        <ol className="list-decimal space-y-1 pl-5 text-sm text-black/70">
+          <li>Stáhněte soubor výše (nebo z QR / odkazu na této stránce v telefonu).</li>
+          <li>Otevřete stažený soubor a potvrďte instalaci.</li>
+          <li>
+            Pokud Android blokuje instalaci, povolte u prohlížeče „Instalovat neznámé aplikace“.
+          </li>
+          <li>Otevřete appku <strong>Provoz</strong> a přihlaste se.</li>
+        </ol>
+      </section>
+
+      <section className="space-y-3 border border-black/10 p-4">
+        <h3 className="font-medium">QR kód / odkaz (webová appka)</h3>
         <p className="text-sm text-black/60">
           {platform === 'desktop'
-            ? 'Naskenujte telefonem, přihlaste se a přidejte appku na plochu.'
-            : 'Otevřete odkaz níže v prohlížeči a přidejte na plochu.'}
+            ? 'Pro iPhone naskenujte QR. Na Androidu raději stáhněte APK výše.'
+            : platform === 'android'
+              ? 'Na Androidu preferujte stažení APK výše. Odkaz níže je záložní webová verze.'
+              : 'Na iPhonu otevřete odkaz v Safari a přidejte na plochu.'}
         </p>
         <div className="flex justify-center bg-white p-3">
           <img src={qrUrl} alt="QR kód na provozní aplikaci" width={220} height={220} className="h-[220px] w-[220px]" />
@@ -88,24 +113,13 @@ export default function ProvozAplikacePage() {
       <section className="space-y-3 border border-black/10 p-4 text-sm">
         <h3 className="font-medium">iPhone (Safari)</h3>
         <ol className="list-decimal space-y-1 pl-5 text-black/70">
-          <li>Otevřete odkaz výše v Safari.</li>
+          <li>Otevřete odkaz výše v Safari (ne v Chrome).</li>
           <li>Přihlaste se.</li>
           <li>Sdílet → „Přidat na plochu“ → Přidat.</li>
         </ol>
-      </section>
-
-      <section className="space-y-3 border border-black/10 p-4 text-sm">
-        <h3 className="font-medium">Android (Chrome)</h3>
-        <ol className="list-decimal space-y-1 pl-5 text-black/70">
-          <li>Otevřete odkaz v Chrome.</li>
-          <li>Přihlaste se.</li>
-          <li>Počkejte na tlačítko „Nainstalovat“ v appce (nebo ⋮ → „Nainstalovat aplikaci“).</li>
-          <li>Nepoužívejte „Přidat na plochu“ — to vytvoří zkratku s odznakem Chrome.</li>
-          <li>
-            Telefon musí být přihlášený do Google Play (jinak Chrome umí jen zkratku). Málo místa
-            ve vnitřní paměti taky shodí instalaci na zkratku.
-          </li>
-        </ol>
+        <p className="text-xs text-black/50">
+          Apple neumožňuje volně stahovat IPA z webu bez App Store — na iPhonu zůstává PWA.
+        </p>
       </section>
 
       <p className="text-xs text-black/50">
