@@ -169,3 +169,69 @@ export async function uploadReceipt(input: {
   });
   return { emailed: completed.emailed };
 }
+
+export type StaffWorker = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  status: string;
+};
+
+export type CalendarAssignment = {
+  id: string;
+  workerId: string;
+  firstName: string;
+  lastName: string;
+  businessDate: string;
+  plannedStart: string;
+  plannedEnd: string;
+  attendanceStatus: 'open' | 'confirmed' | null;
+};
+
+export type CalendarDay = {
+  date: string | null;
+  dayOfMonth: number | null;
+  events: { id: string; titleCz: string; timeText: string | null }[];
+  assignments: CalendarAssignment[];
+};
+
+export type MonthCalendar = {
+  year: number;
+  month: number;
+  days: CalendarDay[];
+};
+
+export async function fetchActiveWorkers(): Promise<StaffWorker[]> {
+  const res = await apiFetch<{ workers: StaffWorker[] }>('/api/provoz/workers');
+  return res.workers.filter((w) => w.status === 'active');
+}
+
+export async function fetchMonthCalendar(year: number, month: number): Promise<MonthCalendar> {
+  const res = await apiFetch<{ calendar: MonthCalendar }>(
+    `/api/provoz/calendar/${year}/${month}`
+  );
+  return res.calendar;
+}
+
+export async function saveMonthPlan(input: {
+  workerId: string;
+  year: number;
+  month: number;
+  plannedStart: string;
+  plannedEnd: string;
+  dates: string[];
+}): Promise<{
+  created: string[];
+  cancelled: string[];
+  updated: string[];
+  skipped: { date: string; reason: string }[];
+}> {
+  return apiFetch('/api/provoz/shifts/month-plan', {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  });
+}
+
+export function hasPermission(permissions: string[] | undefined, key: string): boolean {
+  return Boolean(permissions?.includes(key) || permissions?.includes('*'));
+}

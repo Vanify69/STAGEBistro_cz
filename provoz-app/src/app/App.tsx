@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import {
   ShoppingCart,
   Camera,
+  CalendarDays,
   ChevronRight,
   ChevronLeft,
   Check,
@@ -26,16 +27,19 @@ import {
   fetchSuppliers,
   formatCents,
   categoryFromApi,
+  hasPermission,
   login as apiLoginRequest,
   logout as apiLogoutRequest,
   previewOrder,
   sendOrder,
   uploadReceipt,
+  type AuthUser,
   type Supplier as ApiSupplier,
   type SupplierItem as ApiSupplierItem,
   type ReceiptUiCategory,
 } from "@/lib/provozApi";
 import { InstallAppBanner } from "@/app/InstallAppBanner";
+import { ShiftsTab } from "@/app/ShiftsTab";
 // Logo inlined — avoids Vite asset resolution issues in sandboxed environments
 function StageBistroLogo({ className }: { className?: string }) {
   return (
@@ -60,7 +64,7 @@ const BODY:  React.CSSProperties = { fontFamily: "'DM Sans', sans-serif" };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Tab = "objednavky" | "uctenky";
+type Tab = "objednavky" | "uctenky" | "smeny";
 type Supplier = ApiSupplier;
 type SupplierItem = ApiSupplierItem;
 
@@ -205,7 +209,7 @@ function UserStrip({ userEmail, onLogout }: { userEmail: string; onLogout: () =>
 
 // ─── LOGIN ─────────────────────────────────────────────────────────────────────
 
-function LoginScreen({ onLogin }: { onLogin: (email: string) => void }) {
+function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
   const [email, setEmail]         = useState("");
   const [password, setPassword]   = useState("");
   const [showPass, setShowPass]   = useState(false);
@@ -218,7 +222,7 @@ function LoginScreen({ onLogin }: { onLogin: (email: string) => void }) {
     setLoading(true);
     try {
       const user = await apiLoginRequest(email, password);
-      onLogin(user.email);
+      onLogin(user);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Chyba přihlášení. Zkuste znovu.");
     } finally {
@@ -935,11 +939,22 @@ function ReceiptsTab() {
 
 // ─── Bottom tab bar ────────────────────────────────────────────────────────────
 
-function TabBar({ active, onChange }: { active: Tab; onChange: (t: Tab) => void }) {
+function TabBar({
+  active,
+  onChange,
+  showShifts,
+}: {
+  active: Tab;
+  onChange: (t: Tab) => void;
+  showShifts: boolean;
+}) {
   const tabs = [
     { id: "objednavky" as Tab, label: "Objednávky", Icon: ShoppingCart },
-    { id: "uctenky"    as Tab, label: "Účtenky",    Icon: Camera },
-  ] as const;
+    { id: "uctenky" as Tab, label: "Účtenky", Icon: Camera },
+    ...(showShifts
+      ? [{ id: "smeny" as Tab, label: "Směny", Icon: CalendarDays }]
+      : []),
+  ];
 
   return (
     <div className="flex border-t border-border shrink-0 bg-background" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
@@ -963,16 +978,18 @@ function TabBar({ active, onChange }: { active: Tab; onChange: (t: Tab) => void 
 // ─── Root ──────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [bootLoading, setBootLoading] = useState(true);
-  const [tab, setTab]             = useState<Tab>("objednavky");
+  const [tab, setTab] = useState<Tab>("objednavky");
+
+  const showShifts = hasPermission(user?.permissions, "staff.shifts");
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const user = await fetchMe();
-        if (!cancelled && user) setUserEmail(user.email);
+        const me = await fetchMe();
+        if (!cancelled && me) setUser(me);
       } catch {
         /* not logged in */
       } finally {
@@ -982,12 +999,16 @@ export default function App() {
     return () => { cancelled = true; };
   }, []);
 
-  function handleLogin(email: string) {
-    setUserEmail(email);
+  useEffect(() => {
+    if (tab === "smeny" && !showShifts) setTab("objednavky");
+  }, [tab, showShifts]);
+
+  function handleLogin(next: AuthUser) {
+    setUser(next);
   }
 
   function handleLogout() {
-    setUserEmail(null);
+    setUser(null);
     setTab("objednavky");
   }
 
@@ -1001,19 +1022,21 @@ export default function App() {
           <div className="flex-1 flex items-center justify-center">
             <Loader2 className="animate-spin text-muted-foreground" size={28} />
           </div>
-        ) : !userEmail ? (
+        ) : !user ? (
           <div className="flex-1 overflow-y-auto">
             <LoginScreen onLogin={handleLogin} />
             <InstallAppBanner />
           </div>
         ) : (
           <>
-            <UserStrip userEmail={userEmail} onLogout={handleLogout} />
+            <UserStrip userEmail={user.email} onLogout={handleLogout} />
             <InstallAppBanner />
             <div className="flex-1 overflow-hidden flex flex-col">
-              {tab === "objednavky" ? <OrdersTab /> : <ReceiptsTab />}
+              {tab === "objednavky" && <OrdersTab />}
+              {tab === "uctenky" && <ReceiptsTab />}
+              {tab === "smeny" && <ShiftsTab permissions={user.permissions} />}
             </div>
-            <TabBar active={tab} onChange={setTab} />
+            <TabBar active={tab} onChange={setTab} showShifts={showShifts} />
           </>
         )}
       </div>
