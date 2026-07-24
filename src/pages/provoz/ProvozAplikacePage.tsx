@@ -99,7 +99,10 @@ export default function ProvozAplikacePage() {
         <ol className="list-decimal space-y-1 pl-5 text-black/70">
           <li>Otevřete odkaz v Chrome.</li>
           <li>Přihlaste se.</li>
-          <li>Menu (⋮) → „Nainstalovat aplikaci“ / „Přidat na plochu“.</li>
+          <li>Menu (⋮) → „Nainstalovat aplikaci“ (ne jen „Přidat na plochu“).</li>
+          <li>
+            Pokud má stará ikona odznak Chrome, smažte ji a nainstalujte znovu po načtení stránky.
+          </li>
         </ol>
       </section>
 
