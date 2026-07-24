@@ -61,6 +61,7 @@ export const AUDIT_ACTIONS = {
     supplierUpdate: 'provoz.supplier.update',
     supplierItemCreate: 'provoz.supplier_item.create',
     supplierItemUpdate: 'provoz.supplier_item.update',
+    supplierItemDelete: 'provoz.supplier_item.delete',
     orderTemplateUpdate: 'provoz.order_template.update',
     orderCreate: 'provoz.order.create',
     orderSend: 'provoz.order.send',

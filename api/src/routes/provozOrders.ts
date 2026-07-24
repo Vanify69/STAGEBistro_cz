@@ -255,6 +255,21 @@ provozOrdersRouter.patch('/supplier-items/:id', permProvozOrders, async (c) => {
   return c.json({ item: row });
 });
 
+provozOrdersRouter.delete('/supplier-items/:id', permProvozOrders, async (c) => {
+  const id = c.req.param('id');
+  const db = getDb();
+  const [row] = await db.delete(supplierItems).where(eq(supplierItems.id, id)).returning();
+  if (!row) return c.json({ error: 'Not found' }, 404);
+  await auditAction(c, {
+    action: AUDIT_ACTIONS.provoz.supplierItemDelete,
+    entityType: 'supplier_item',
+    entityId: id,
+    summary: `Smazána položka ${row.name}`,
+    metadata: { supplierId: row.supplierId },
+  });
+  return c.json({ ok: true });
+});
+
 provozOrdersRouter.get('/order-template', permProvozOrdersRead, async (c) => {
   const template = await getOrCreateTemplate();
   return c.json({ template });

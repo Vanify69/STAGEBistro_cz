@@ -79,6 +79,10 @@ export default function ProvozDodavatelePage() {
   const [itemName, setItemName] = useState('');
   const [itemUnit, setItemUnit] = useState('ks');
   const [itemDefaultQty, setItemDefaultQty] = useState('');
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editUnit, setEditUnit] = useState('ks');
+  const [editDefaultQty, setEditDefaultQty] = useState('');
 
   const [subjectTemplate, setSubjectTemplate] = useState('');
   const [bodyTemplate, setBodyTemplate] = useState('');
@@ -120,6 +124,10 @@ export default function ProvozDodavatelePage() {
     const list = suppliersQuery.data?.suppliers ?? [];
     if (!selectedId && list[0]) setSelectedId(list[0].id);
   }, [suppliersQuery.data, selectedId]);
+
+  useEffect(() => {
+    setEditingItemId(null);
+  }, [selectedId]);
 
   const createSupplier = useMutation({
     mutationFn: () =>
@@ -176,6 +184,38 @@ export default function ProvozDodavatelePage() {
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['provoz', 'supplier-items', selectedId] }),
   });
+
+  const updateItem = useMutation({
+    mutationFn: (payload: { id: string; name: string; unit: string; defaultQty: string }) =>
+      apiFetch(`/api/provoz/supplier-items/${payload.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          name: payload.name,
+          unit: payload.unit,
+          defaultQty: payload.defaultQty || null,
+        }),
+      }),
+    onSuccess: () => {
+      setEditingItemId(null);
+      qc.invalidateQueries({ queryKey: ['provoz', 'supplier-items', selectedId] });
+    },
+  });
+
+  const deleteItem = useMutation({
+    mutationFn: (item: SupplierItem) =>
+      apiFetch(`/api/provoz/supplier-items/${item.id}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      setEditingItemId(null);
+      qc.invalidateQueries({ queryKey: ['provoz', 'supplier-items', selectedId] });
+    },
+  });
+
+  function startEditItem(item: SupplierItem) {
+    setEditingItemId(item.id);
+    setEditName(item.name);
+    setEditUnit(item.unit);
+    setEditDefaultQty(item.defaultQty ?? '');
+  }
 
   const saveTemplate = useMutation({
     mutationFn: () =>
@@ -297,25 +337,107 @@ export default function ProvozDodavatelePage() {
                 </div>
                 <ul className="divide-y divide-black/10 text-sm">
                   {(itemsQuery.data?.items ?? []).map((item) => (
-                    <li key={item.id} className="flex items-center justify-between gap-2 py-2">
-                      <span className={!item.active ? 'opacity-50' : ''}>
-                        {item.name}{' '}
-                        <span className="text-black/50">
-                          ({item.unit}
-                          {item.defaultQty ? `, výchozí ${item.defaultQty}` : ''})
-                        </span>
-                      </span>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => toggleItem.mutate(item)}
-                      >
-                        {item.active ? 'Vypnout' : 'Zapnout'}
-                      </Button>
+                    <li key={item.id} className="space-y-2 py-2">
+                      {editingItemId === item.id ? (
+                        <div className="grid gap-2 sm:grid-cols-4">
+                          <Input
+                            placeholder="Název"
+                            value={editName}
+                            onChange={(e) => setEditName(e.target.value)}
+                          />
+                          <Input
+                            placeholder="Jednotka"
+                            value={editUnit}
+                            onChange={(e) => setEditUnit(e.target.value)}
+                          />
+                          <Input
+                            placeholder="Výchozí množství"
+                            value={editDefaultQty}
+                            onChange={(e) => setEditDefaultQty(e.target.value)}
+                          />
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              disabled={!editName.trim() || !editUnit.trim() || updateItem.isPending}
+                              onClick={() =>
+                                updateItem.mutate({
+                                  id: item.id,
+                                  name: editName.trim(),
+                                  unit: editUnit.trim(),
+                                  defaultQty: editDefaultQty.trim(),
+                                })
+                              }
+                            >
+                              Uložit
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setEditingItemId(null)}
+                            >
+                              Zrušit
+                            </Button>
+                          </div>
+                          {updateItem.isError && (
+                            <p className="text-sm text-red-600 sm:col-span-4">
+                              {(updateItem.error as Error).message}
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className={!item.active ? 'opacity-50' : ''}>
+                            {item.name}{' '}
+                            <span className="text-black/50">
+                              ({item.unit}
+                              {item.defaultQty ? `, výchozí ${item.defaultQty}` : ''})
+                            </span>
+                          </span>
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => startEditItem(item)}
+                            >
+                              Upravit
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => toggleItem.mutate(item)}
+                            >
+                              {item.active ? 'Vypnout' : 'Zapnout'}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={deleteItem.isPending}
+                              onClick={() => {
+                                if (
+                                  window.confirm(
+                                    `Smazat položku „${item.name}“? V historii objednávek zůstane zachována.`
+                                  )
+                                ) {
+                                  deleteItem.mutate(item);
+                                }
+                              }}
+                            >
+                              Smazat
+                            </Button>
+                          </div>
+                        </div>
+                      )}
                     </li>
                   ))}
                 </ul>
+                {deleteItem.isError && (
+                  <p className="text-sm text-red-600">{(deleteItem.error as Error).message}</p>
+                )}
               </div>
             </>
           ) : (
