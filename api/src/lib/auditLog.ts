@@ -77,6 +77,7 @@ export const AUDIT_ACTIONS = {
     shiftCreate: 'staff.shift.create',
     shiftUpdate: 'staff.shift.update',
     shiftDelete: 'staff.shift.delete',
+    shiftBulkPlan: 'staff.shift.bulk_plan',
     attendanceUpdate: 'staff.attendance.update',
     attendanceConfirm: 'staff.attendance.confirm',
     paymentCreate: 'staff.payment.create',

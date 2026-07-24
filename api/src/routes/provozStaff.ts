@@ -92,6 +92,16 @@ const shiftSchema = z.object({
   note: z.string().nullable().optional(),
 });
 
+/** Nastaví směny jednoho brigádníka na vybrané dny v rámci jednoho měsíce. */
+const shiftMonthPlanSchema = z.object({
+  workerId: z.string().uuid(),
+  year: z.number().int().min(2000).max(2100),
+  month: z.number().int().min(1).max(12),
+  plannedStart: z.string().regex(hmRegex),
+  plannedEnd: z.string().regex(hmRegex),
+  dates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).max(40),
+});
+
 function canViewWorkerWage(user: AuthUser): boolean {
   return hasPermission(user.permissions, 'staff.workers');
 }
@@ -588,6 +598,153 @@ provozStaffRouter.post('/shifts', permStaffShifts, async (c) => {
   } catch {
     return c.json({ error: 'Směna pro tento den již existuje' }, 409);
   }
+});
+
+provozStaffRouter.put('/shifts/month-plan', permStaffShifts, async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const parsed = shiftMonthPlanSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: 'Invalid body' }, 400);
+
+  const { workerId, year, month, plannedStart, plannedEnd } = parsed.data;
+  const wantedDates = [...new Set(parsed.data.dates)].sort();
+  const monthPrefix = `${year}-${String(month).padStart(2, '0')}`;
+  for (const d of wantedDates) {
+    if (!d.startsWith(monthPrefix)) {
+      return c.json({ error: `Datum ${d} není v měsíci ${monthPrefix}` }, 400);
+    }
+  }
+
+  const db = getDb();
+  const [worker] = await db.select().from(workers).where(eq(workers.id, workerId)).limit(1);
+  if (!worker || worker.deletedAt) return c.json({ error: 'Worker not found' }, 404);
+  if (worker.status !== 'active') {
+    return c.json({ error: 'Worker must be active (signed contract)' }, 400);
+  }
+  try {
+    await assertWorkerCanSchedule(worker.id, year);
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 400);
+  }
+
+  const monthStart = `${monthPrefix}-01`;
+  const lastDay = new Date(year, month, 0).getDate();
+  const monthEnd = `${monthPrefix}-${String(lastDay).padStart(2, '0')}`;
+
+  const existing = await db
+    .select({
+      shift: shiftAssignments,
+      attendance: attendanceRecords,
+    })
+    .from(shiftAssignments)
+    .leftJoin(attendanceRecords, eq(attendanceRecords.shiftAssignmentId, shiftAssignments.id))
+    .where(
+      and(
+        eq(shiftAssignments.workerId, workerId),
+        isNull(shiftAssignments.cancelledAt),
+        // business_date in month range
+      )
+    );
+
+  const inMonth = existing.filter(
+    (r) => r.shift.businessDate >= monthStart && r.shift.businessDate <= monthEnd
+  );
+  const byDate = new Map(inMonth.map((r) => [r.shift.businessDate, r]));
+  const wantedSet = new Set(wantedDates);
+
+  const created: string[] = [];
+  const cancelled: string[] = [];
+  const updated: string[] = [];
+  const skipped: { date: string; reason: string }[] = [];
+
+  for (const date of wantedDates) {
+    const row = byDate.get(date);
+    if (!row) {
+      try {
+        const [shift] = await db
+          .insert(shiftAssignments)
+          .values({
+            workerId,
+            businessDate: date,
+            plannedStart: toPgTime(plannedStart),
+            plannedEnd: toPgTime(plannedEnd),
+          })
+          .returning();
+        await db.insert(attendanceRecords).values({ shiftAssignmentId: shift!.id });
+        created.push(date);
+      } catch {
+        skipped.push({ date, reason: 'Směnu se nepodařilo vytvořit (kolize)' });
+      }
+      continue;
+    }
+    const sameTimes =
+      formatTimeHm(String(row.shift.plannedStart)) === plannedStart &&
+      formatTimeHm(String(row.shift.plannedEnd)) === plannedEnd;
+    if (sameTimes) continue;
+    if (row.attendance?.status === 'confirmed') {
+      skipped.push({ date, reason: 'Potvrzená směna — čas nezměněn' });
+      continue;
+    }
+    try {
+      if (row.attendance?.id) await assertAttendanceEditable(row.attendance.id);
+      await db
+        .update(shiftAssignments)
+        .set({
+          plannedStart: toPgTime(plannedStart),
+          plannedEnd: toPgTime(plannedEnd),
+          updatedAt: new Date(),
+        })
+        .where(eq(shiftAssignments.id, row.shift.id));
+      updated.push(date);
+    } catch (err) {
+      skipped.push({
+        date,
+        reason: err instanceof Error ? err.message : 'Čas směny nelze upravit',
+      });
+    }
+  }
+
+  for (const row of inMonth) {
+    if (wantedSet.has(row.shift.businessDate)) continue;
+    try {
+      if (row.attendance?.id) await assertAttendanceEditable(row.attendance.id);
+      await db
+        .update(shiftAssignments)
+        .set({ cancelledAt: new Date(), updatedAt: new Date() })
+        .where(eq(shiftAssignments.id, row.shift.id));
+      cancelled.push(row.shift.businessDate);
+    } catch (err) {
+      skipped.push({
+        date: row.shift.businessDate,
+        reason:
+          err instanceof Error
+            ? err.message
+            : 'Směnu nelze zrušit (potvrzená / ve výplatě)',
+      });
+    }
+  }
+
+  await auditAction(c, {
+    action: AUDIT_ACTIONS.staff.shiftBulkPlan,
+    entityType: 'worker',
+    entityId: workerId,
+    summary: `Měsíční plán ${monthPrefix}: ${worker.firstName} ${worker.lastName} (+${created.length}/−${cancelled.length})`,
+    metadata: {
+      year,
+      month,
+      created: created.length,
+      cancelled: cancelled.length,
+      updated: updated.length,
+      skipped: skipped.length,
+    },
+  });
+
+  return c.json({
+    ok: true,
+    created,
+    cancelled,
+    updated,
+    skipped,
+  });
 });
 
 const attendanceTimesSchema = z.object({
