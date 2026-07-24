@@ -35,6 +35,7 @@ import {
   type SupplierItem as ApiSupplierItem,
   type ReceiptUiCategory,
 } from "@/lib/provozApi";
+import { InstallAppBanner } from "@/app/InstallAppBanner";
 // Logo inlined — avoids Vite asset resolution issues in sandboxed environments
 function StageBistroLogo({ className }: { className?: string }) {
   return (
@@ -1003,10 +1004,12 @@ export default function App() {
         ) : !userEmail ? (
           <div className="flex-1 overflow-y-auto">
             <LoginScreen onLogin={handleLogin} />
+            <InstallAppBanner />
           </div>
         ) : (
           <>
             <UserStrip userEmail={userEmail} onLogout={handleLogout} />
+            <InstallAppBanner />
             <div className="flex-1 overflow-hidden flex flex-col">
               {tab === "objednavky" ? <OrdersTab /> : <ReceiptsTab />}
             </div>

@@ -99,9 +99,11 @@ export default function ProvozAplikacePage() {
         <ol className="list-decimal space-y-1 pl-5 text-black/70">
           <li>Otevřete odkaz v Chrome.</li>
           <li>Přihlaste se.</li>
-          <li>Menu (⋮) → „Nainstalovat aplikaci“ (ne jen „Přidat na plochu“).</li>
+          <li>Počkejte na tlačítko „Nainstalovat“ v appce (nebo ⋮ → „Nainstalovat aplikaci“).</li>
+          <li>Nepoužívejte „Přidat na plochu“ — to vytvoří zkratku s odznakem Chrome.</li>
           <li>
-            Pokud má stará ikona odznak Chrome, smažte ji a nainstalujte znovu po načtení stránky.
+            Telefon musí být přihlášený do Google Play (jinak Chrome umí jen zkratku). Málo místa
+            ve vnitřní paměti taky shodí instalaci na zkratku.
           </li>
         </ol>
       </section>

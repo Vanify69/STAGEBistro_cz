@@ -10,7 +10,14 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.png', 'apple-touch-icon.png', 'icon-192.png', 'icon-512.png'],
+      includeAssets: [
+        'favicon.png',
+        'apple-touch-icon.png',
+        'icon-192.png',
+        'icon-512.png',
+        'icon-maskable-192.png',
+        'icon-maskable-512.png',
+      ],
       manifest: {
         id: '/',
         name: 'Stage Bistro – provoz',
@@ -37,13 +44,13 @@ export default defineConfig({
             purpose: 'any',
           },
           {
-            src: 'icon-192.png',
+            src: 'icon-maskable-192.png',
             sizes: '192x192',
             type: 'image/png',
             purpose: 'maskable',
           },
           {
-            src: 'icon-512.png',
+            src: 'icon-maskable-512.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable',
