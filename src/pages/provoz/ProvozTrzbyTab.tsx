@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
 import { Textarea } from '@/app/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/components/ui/select';
 import { useProvozAuth } from '@/pages/provoz/useProvozAuth';
+import { usePermissions } from '@/lib/usePermissions';
 
 type Daily = {
   businessDate: string;
@@ -31,6 +32,7 @@ function centsToKc(cents: number): string {
 export default function ProvozTrzbyTab() {
   const qc = useQueryClient();
   const { allowed } = useProvozAuth();
+  const { can } = usePermissions();
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [cash, setCash] = useState('');
   const [card, setCard] = useState('');
@@ -88,58 +90,6 @@ export default function ProvozTrzbyTab() {
     enabled: allowed,
   });
 
-  const receiptsQuery = useQuery({
-    queryKey: ['provoz', 'receipts'],
-    queryFn: () =>
-      apiFetch<{ receipts: { id: string; category: string; status: string; storageKey: string | null }[] }>(
-        '/api/provoz/receipts'
-      ),
-    enabled: allowed,
-  });
-
-  const [rcat, setRcat] = useState<'nafta' | 'suroviny' | 'ostatni'>('suroviny');
-  const [rnote, setRnote] = useState('');
-  const [ramount, setRamount] = useState('');
-  const [rfile, setRfile] = useState<File | null>(null);
-
-  const uploadReceipt = useMutation({
-    mutationFn: async () => {
-      const created = await apiFetch<{ receipt: { id: string } }>('/api/provoz/receipts', {
-        method: 'POST',
-        body: JSON.stringify({
-          category: rcat,
-          businessDate: date,
-          amountCents: ramount ? kcToCents(ramount) : null,
-          note: rnote || null,
-        }),
-      });
-      const id = created.receipt.id;
-      if (!rfile) return { id, skippedUpload: true as const };
-      const mime = rfile.type || 'application/octet-stream';
-      const presign = await apiFetch<{ uploadUrl: string; storageKey: string; mime: string }>(
-        `/api/provoz/receipts/${id}/presign`,
-        { method: 'POST', body: JSON.stringify({ mime }) }
-      );
-      const put = await fetch(presign.uploadUrl, {
-        method: 'PUT',
-        headers: { 'Content-Type': mime },
-        body: rfile,
-      });
-      if (!put.ok) throw new Error('Upload to storage failed');
-      await apiFetch(`/api/provoz/receipts/${id}/complete`, {
-        method: 'PATCH',
-        body: JSON.stringify({ storageKey: presign.storageKey, mime }),
-      });
-      return { id };
-    },
-    onSuccess: () => {
-      setRnote('');
-      setRamount('');
-      setRfile(null);
-      qc.invalidateQueries({ queryKey: ['provoz', 'receipts'] });
-    },
-  });
-
   return (
     <div className="space-y-10">
       <section className="space-y-4 border border-black/10 p-4">
@@ -194,53 +144,15 @@ export default function ProvozTrzbyTab() {
         </ul>
       </section>
 
-      <section className="space-y-4 border border-black/10 p-4">
-        <h2 className="text-lg font-medium">Účtenky / doklady</h2>
-        <div className="grid sm:grid-cols-2 gap-3">
-          <div>
-            <Label>Kategorie</Label>
-            <Select value={rcat} onValueChange={(v) => setRcat(v as typeof rcat)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="nafta">Nafta</SelectItem>
-                <SelectItem value="suroviny">Suroviny</SelectItem>
-                <SelectItem value="ostatni">Ostatní</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label>Částka (Kč, volitelné)</Label>
-            <Input value={ramount} onChange={(e) => setRamount(e.target.value)} inputMode="decimal" />
-          </div>
-        </div>
-        <div>
-          <Label>Poznámka</Label>
-          <Input value={rnote} onChange={(e) => setRnote(e.target.value)} />
-        </div>
-        <div>
-          <Label>Foto / PDF</Label>
-          <Input
-            type="file"
-            accept="image/*,application/pdf"
-            capture="environment"
-            onChange={(e) => setRfile(e.target.files?.[0] ?? null)}
-          />
-        </div>
-        {uploadReceipt.isError && <p className="text-sm text-red-600">{(uploadReceipt.error as Error).message}</p>}
-        <Button type="button" onClick={() => uploadReceipt.mutate()} disabled={uploadReceipt.isPending}>
-          Nahrát doklad
-        </Button>
-        <ul className="text-xs text-black/70 space-y-1 max-h-40 overflow-auto">
-          {(receiptsQuery.data?.receipts ?? []).map((r) => (
-            <li key={r.id}>
-              {r.id.slice(0, 8)}… {r.category} — {r.status}
-              {r.storageKey ? ' (soubor)' : ''}
-            </li>
-          ))}
-        </ul>
-      </section>
+      {can('provoz.receipts') && (
+        <section className="space-y-2 border border-black/10 p-4">
+          <h2 className="text-lg font-medium">Účtenky / doklady</h2>
+          <p className="text-sm text-black/60">Nahrání a focení dokladů je na stránce Účtenky.</p>
+          <Button type="button" variant="outline" asChild>
+            <Link to="/provoz/uctenky">Otevřít účtenky</Link>
+          </Button>
+        </section>
+      )}
     </div>
   );
 }

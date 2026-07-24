@@ -17,6 +17,9 @@ export const permStaffPayments = requirePermission('staff.payments');
 
 export const permProvozSales = requirePermission('provoz.sales');
 export const permProvozReceipts = requirePermission('provoz.receipts');
+export const permProvozOrders = requirePermission('provoz.orders');
+export const permProvozOrdersSend = requirePermission('provoz.orders.send', 'provoz.orders');
+export const permProvozOrdersRead = requirePermission('provoz.orders', 'provoz.orders.send');
 
 export const permAccountingRead = requirePermission('accounting.read');
 export const permAccountingBook = requirePermission('accounting.book');

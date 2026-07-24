@@ -57,6 +57,13 @@ export const AUDIT_ACTIONS = {
     salesUpdate: 'provoz.sales.update',
     receiptCreate: 'provoz.receipt.create',
     receiptUpload: 'provoz.receipt.upload',
+    supplierCreate: 'provoz.supplier.create',
+    supplierUpdate: 'provoz.supplier.update',
+    supplierItemCreate: 'provoz.supplier_item.create',
+    supplierItemUpdate: 'provoz.supplier_item.update',
+    orderTemplateUpdate: 'provoz.order_template.update',
+    orderCreate: 'provoz.order.create',
+    orderSend: 'provoz.order.send',
   },
   staff: {
     workerCreate: 'staff.worker.create',

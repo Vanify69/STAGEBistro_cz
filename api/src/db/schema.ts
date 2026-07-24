@@ -16,6 +16,7 @@ import { relations } from 'drizzle-orm';
 export const roleEnum = pgEnum('user_role', ['admin', 'provoz', 'ucetni']);
 export const receiptCategoryEnum = pgEnum('receipt_category', ['nafta', 'suroviny', 'ostatni']);
 export const receiptStatusEnum = pgEnum('receipt_status', ['pending', 'booked']);
+export const purchaseOrderStatusEnum = pgEnum('purchase_order_status', ['draft', 'sent', 'failed']);
 export const workerStatusEnum = pgEnum('worker_status', [
   'draft',
   'contract_pending',
@@ -143,11 +144,96 @@ export const expenseReceipts = pgTable('expense_receipt', {
   uploadedBy: uuid('uploaded_by').references(() => users.id, { onDelete: 'set null' }),
   bookedAt: timestamp('booked_at', { withTimezone: true }),
   bookedBy: uuid('booked_by').references(() => users.id, { onDelete: 'set null' }),
+  accountingEmailedAt: timestamp('accounting_emailed_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const suppliers = pgTable('supplier', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+  email: text('email').notNull(),
+  phone: text('phone'),
+  note: text('note'),
+  active: boolean('active').notNull().default(true),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const supplierItems = pgTable('supplier_item', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  supplierId: uuid('supplier_id')
+    .notNull()
+    .references(() => suppliers.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  unit: text('unit').notNull().default('ks'),
+  defaultQty: text('default_qty'),
+  note: text('note'),
+  active: boolean('active').notNull().default(true),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const orderEmailTemplates = pgTable('order_email_template', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull().default('Výchozí'),
+  subjectTemplate: text('subject_template').notNull(),
+  bodyTemplate: text('body_template').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const purchaseOrders = pgTable('purchase_order', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  supplierId: uuid('supplier_id')
+    .notNull()
+    .references(() => suppliers.id, { onDelete: 'restrict' }),
+  status: purchaseOrderStatusEnum('status').notNull().default('draft'),
+  note: text('note'),
+  emailSubject: text('email_subject'),
+  emailBody: text('email_body'),
+  errorMessage: text('error_message'),
+  sentAt: timestamp('sent_at', { withTimezone: true }),
+  sentBy: uuid('sent_by').references(() => users.id, { onDelete: 'set null' }),
+  createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const purchaseOrderLines = pgTable('purchase_order_line', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orderId: uuid('order_id')
+    .notNull()
+    .references(() => purchaseOrders.id, { onDelete: 'cascade' }),
+  supplierItemId: uuid('supplier_item_id').references(() => supplierItems.id, {
+    onDelete: 'set null',
+  }),
+  nameSnapshot: text('name_snapshot').notNull(),
+  unitSnapshot: text('unit_snapshot').notNull(),
+  quantity: text('quantity').notNull(),
+  lineNote: text('line_note'),
 });
 
 export const usersRelations = relations(users, ({ many }) => ({
   sessions: many(sessions),
+}));
+
+export const suppliersRelations = relations(suppliers, ({ many }) => ({
+  items: many(supplierItems),
+  orders: many(purchaseOrders),
+}));
+
+export const supplierItemsRelations = relations(supplierItems, ({ one }) => ({
+  supplier: one(suppliers, { fields: [supplierItems.supplierId], references: [suppliers.id] }),
+}));
+
+export const purchaseOrdersRelations = relations(purchaseOrders, ({ one, many }) => ({
+  supplier: one(suppliers, { fields: [purchaseOrders.supplierId], references: [suppliers.id] }),
+  lines: many(purchaseOrderLines),
+}));
+
+export const purchaseOrderLinesRelations = relations(purchaseOrderLines, ({ one }) => ({
+  order: one(purchaseOrders, {
+    fields: [purchaseOrderLines.orderId],
+    references: [purchaseOrders.id],
+  }),
 }));
 
 export const sessionsRelations = relations(sessions, ({ one }) => ({

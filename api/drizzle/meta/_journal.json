@@ -57,6 +57,20 @@
       "when": 1762732800000,
       "tag": "0007_users_permissions_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1765324800000,
+      "tag": "0008_receipt_accounting_email",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1767916800000,
+      "tag": "0009_purchase_orders",
+      "breakpoints": true
     }
   ]
 }

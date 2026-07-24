@@ -10,6 +10,24 @@ export type ProvozNavItem = {
 
 export const PROVOZ_NAV: ProvozNavItem[] = [
   { to: '/provoz/trzby', label: 'Tržby', permissions: ['provoz.sales'] },
+  { to: '/provoz/uctenky', label: 'Účtenky', permissions: ['provoz.receipts'] },
+  { to: '/provoz/objednavky', label: 'Objednávky', permissions: ['provoz.orders.send', 'provoz.orders'] },
+  { to: '/provoz/dodavatele', label: 'Dodavatelé', permissions: ['provoz.orders'] },
+  {
+    to: '/provoz/aplikace',
+    label: 'Aplikace',
+    permissions: [
+      'provoz.sales',
+      'provoz.receipts',
+      'provoz.orders',
+      'provoz.orders.send',
+      'staff.workers',
+      'staff.shifts',
+      'staff.attendance',
+      'staff.contracts',
+      'staff.payments',
+    ],
+  },
   {
     to: '/provoz/zamestnanci',
     label: 'Zaměstnanci',
@@ -21,6 +39,20 @@ export const PROVOZ_NAV: ProvozNavItem[] = [
 
 export const PROVOZ_ROUTE_PERMISSIONS: Record<string, Permission[]> = {
   '/provoz/trzby': ['provoz.sales'],
+  '/provoz/uctenky': ['provoz.receipts'],
+  '/provoz/objednavky': ['provoz.orders.send', 'provoz.orders'],
+  '/provoz/dodavatele': ['provoz.orders'],
+  '/provoz/aplikace': [
+    'provoz.sales',
+    'provoz.receipts',
+    'provoz.orders',
+    'provoz.orders.send',
+    'staff.workers',
+    'staff.shifts',
+    'staff.attendance',
+    'staff.contracts',
+    'staff.payments',
+  ],
   '/provoz/zamestnanci': ['staff.workers', 'staff.shifts', 'staff.attendance', 'staff.contracts', 'staff.payments'],
   '/provoz/plan': ['staff.shifts'],
   '/provoz/kos': ['staff.workers'],

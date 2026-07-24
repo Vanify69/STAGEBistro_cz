@@ -1,22 +1,29 @@
 import nodemailer from 'nodemailer';
 
+export type MailAttachment = {
+  filename: string;
+  content: Buffer;
+  contentType: string;
+};
+
 export type SendMailInput = {
   to: string;
   subject: string;
   text: string;
   html?: string;
+  attachments?: MailAttachment[];
 };
 
-function smtpConfigured(): boolean {
+export function isSmtpConfigured(): boolean {
   return Boolean(process.env.SMTP_HOST?.trim() && process.env.SMTP_USER?.trim());
 }
 
 export function isMailConfigured(): boolean {
-  return smtpConfigured() && Boolean(process.env.UCETNI_EMAIL?.trim());
+  return isSmtpConfigured() && Boolean(process.env.UCETNI_EMAIL?.trim());
 }
 
 export async function sendMail(input: SendMailInput): Promise<void> {
-  if (!smtpConfigured()) {
+  if (!isSmtpConfigured()) {
     throw new Error('SMTP není nakonfigurováno (SMTP_HOST, SMTP_USER, SMTP_PASS)');
   }
 
@@ -41,5 +48,10 @@ export async function sendMail(input: SendMailInput): Promise<void> {
     subject: input.subject,
     text: input.text,
     html: input.html,
+    attachments: input.attachments?.map((a) => ({
+      filename: a.filename,
+      content: a.content,
+      contentType: a.contentType,
+    })),
   });
 }

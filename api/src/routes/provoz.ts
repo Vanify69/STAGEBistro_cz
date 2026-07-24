@@ -9,13 +9,16 @@ import { isValidYmd } from '../lib/pragueDate.js';
 import { isR2Configured, presignPutObject } from '../lib/s3.js';
 import { permProvozSales, permProvozReceipts } from '../lib/staffRoutePermissions.js';
 import { auditAction, AUDIT_ACTIONS, writeAudit } from '../lib/auditLog.js';
+import { notifyAccountingOfReceipt } from '../lib/receiptAccountingNotify.js';
 import { provozStaffRouter } from './provozStaff.js';
+import { provozOrdersRouter } from './provozOrders.js';
 
 export const provozRouter = new Hono<{ Variables: { user: AuthUser } }>();
 
 provozRouter.use('*', requireAuth);
 
 provozRouter.route('/', provozStaffRouter);
+provozRouter.route('/', provozOrdersRouter);
 
 const dailySchema = z.object({
   cashCents: z.number().int().min(0),
@@ -181,7 +184,13 @@ provozRouter.patch('/receipts/:id/complete', permProvozReceipts, async (c) => {
     summary: `Nahrán soubor účtenky`,
     metadata: { mime: parsed.data.mime },
   });
-  return c.json({ receipt: row });
+  const notify = await notifyAccountingOfReceipt(row);
+  const refreshed = notify.emailed
+    ? (
+        await db.select().from(expenseReceipts).where(eq(expenseReceipts.id, id)).limit(1)
+      )[0] ?? row
+    : row;
+  return c.json({ receipt: refreshed, emailed: notify.emailed, emailSkipped: notify.skippedReason ?? null });
 });
 
 provozRouter.get('/receipts', permProvozReceipts, async (c) => {
