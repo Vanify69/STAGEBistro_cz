@@ -1,0 +1,171 @@
+import { apiFetch } from './api';
+
+export type AuthUser = {
+  id: string;
+  email: string;
+  displayName: string | null;
+  role: string;
+  permissions: string[];
+};
+
+export type Supplier = {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  note: string | null;
+  active: boolean;
+};
+
+export type SupplierItem = {
+  id: string;
+  supplierId: string;
+  name: string;
+  unit: string;
+  defaultQty: string | null;
+  active: boolean;
+};
+
+export type ApiReceipt = {
+  id: string;
+  category: 'nafta' | 'suroviny' | 'ostatni';
+  status: string;
+  amountCents: number | null;
+  note: string | null;
+  storageKey: string | null;
+  accountingEmailedAt: string | null;
+  createdAt: string;
+};
+
+export type ReceiptUiCategory = 'Suroviny' | 'Nafta' | 'Ostatní';
+
+const CAT_TO_API: Record<ReceiptUiCategory, ApiReceipt['category']> = {
+  Suroviny: 'suroviny',
+  Nafta: 'nafta',
+  Ostatní: 'ostatni',
+};
+
+const CAT_FROM_API: Record<ApiReceipt['category'], ReceiptUiCategory> = {
+  suroviny: 'Suroviny',
+  nafta: 'Nafta',
+  ostatni: 'Ostatní',
+};
+
+export function categoryToApi(c: ReceiptUiCategory): ApiReceipt['category'] {
+  return CAT_TO_API[c];
+}
+
+export function categoryFromApi(c: ApiReceipt['category']): ReceiptUiCategory {
+  return CAT_FROM_API[c] ?? 'Ostatní';
+}
+
+export function parseAmountToCents(raw: string): number | null {
+  const cleaned = raw.replace(/\s/g, '').replace(/Kč/gi, '').replace(',', '.');
+  if (!cleaned) return null;
+  const n = Number(cleaned);
+  if (!Number.isFinite(n)) return null;
+  return Math.round(n * 100);
+}
+
+export function formatCents(cents: number | null): string {
+  if (cents == null) return '';
+  return `${(cents / 100).toLocaleString('cs-CZ')} Kč`;
+}
+
+export async function fetchMe(): Promise<AuthUser | null> {
+  const res = await apiFetch<{ user: AuthUser | null }>('/api/auth/me');
+  return res.user;
+}
+
+export async function login(email: string, password: string): Promise<AuthUser> {
+  const res = await apiFetch<{ user: AuthUser }>('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+  return res.user;
+}
+
+export async function logout(): Promise<void> {
+  await apiFetch('/api/auth/logout', { method: 'POST', body: '{}' });
+}
+
+export async function fetchSuppliers(): Promise<Supplier[]> {
+  const res = await apiFetch<{ suppliers: Supplier[] }>('/api/provoz/suppliers');
+  return res.suppliers;
+}
+
+export async function fetchSupplierItems(supplierId: string): Promise<SupplierItem[]> {
+  const res = await apiFetch<{ items: SupplierItem[] }>(
+    `/api/provoz/suppliers/${supplierId}/items`
+  );
+  return res.items;
+}
+
+export async function createOrder(input: {
+  supplierId: string;
+  note: string | null;
+  lines: { supplierItemId: string; quantity: string; lineNote: string | null }[];
+}): Promise<{ orderId: string }> {
+  const res = await apiFetch<{ order: { id: string } }>('/api/provoz/orders', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+  return { orderId: res.order.id };
+}
+
+export async function previewOrder(
+  orderId: string
+): Promise<{ to: string; subject: string; body: string }> {
+  return apiFetch(`/api/provoz/orders/${orderId}/preview`, {
+    method: 'POST',
+    body: '{}',
+  });
+}
+
+export async function sendOrder(
+  orderId: string
+): Promise<{ emailed: boolean; error?: string }> {
+  return apiFetch(`/api/provoz/orders/${orderId}/send`, {
+    method: 'POST',
+    body: '{}',
+  });
+}
+
+export async function fetchReceipts(): Promise<ApiReceipt[]> {
+  const res = await apiFetch<{ receipts: ApiReceipt[] }>('/api/provoz/receipts');
+  return res.receipts;
+}
+
+export async function uploadReceipt(input: {
+  file: Blob;
+  category: ReceiptUiCategory;
+  amount: string;
+  note: string;
+}): Promise<{ emailed: boolean }> {
+  const mime = input.file.type || 'image/jpeg';
+  const created = await apiFetch<{ receipt: { id: string } }>('/api/provoz/receipts', {
+    method: 'POST',
+    body: JSON.stringify({
+      category: categoryToApi(input.category),
+      businessDate: new Date().toISOString().slice(0, 10),
+      amountCents: parseAmountToCents(input.amount),
+      note: input.note.trim() || null,
+    }),
+  });
+  const id = created.receipt.id;
+  const presign = await apiFetch<{ uploadUrl: string; storageKey: string; mime: string }>(
+    `/api/provoz/receipts/${id}/presign`,
+    { method: 'POST', body: JSON.stringify({ mime }) }
+  );
+  const put = await fetch(presign.uploadUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': mime },
+    body: input.file,
+  });
+  if (!put.ok) throw new Error('Upload do úložiště selhal');
+  const completed = await apiFetch<{ emailed: boolean }>(`/api/provoz/receipts/${id}/complete`, {
+    method: 'PATCH',
+    body: JSON.stringify({ storageKey: presign.storageKey, mime }),
+  });
+  return { emailed: completed.emailed };
+}

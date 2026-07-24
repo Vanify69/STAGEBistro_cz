@@ -68,7 +68,18 @@ Veřejná data: `GET http://localhost:3001/api/public/site` (z prohlížeče př
 
 ## Railway
 
-Na canvasu stačí **Postgres + API + Web** (viz propojení Postgres → API přes `DATABASE_URL`). **Web s API se „nepropojí“ čárou v UI** — propojení je přes **proměnné prostředí** a **CORS** níže.
+Na canvasu: **Postgres + API + Web + Provoz** (mobilní PWA). Web/Provoz s API se „nepropojí“ čárou — jen přes **proměnné** a **CORS**.
+
+### Mobilní app Provoz (`provoz-app/`)
+
+Samostatná služba (Dockerfile v `provoz-app/`). Detailní checklist: [`provoz-app/README.md`](provoz-app/README.md).
+
+Stručně:
+1. New Service, Root Directory = **`provoz-app`**, Dockerfile.
+2. Build variable **`VITE_API_URL`** = veřejná URL API.
+3. Na **API** do **`CORS_ORIGIN`** přidej URL Provoz služby.
+4. Na **Web** nastav **`VITE_PROVOZ_APP_URL`** = URL Provoz služby a udělej rebuild Web.
+5. API: jednorázově **`MIGRATE_ON_START=true`** kvůli tabulkám objednávek (po úspěchu lze vypnout).
 
 ### A) Tabulky v Postgres (migrace)
 
@@ -87,8 +98,8 @@ Na canvasu stačí **Postgres + API + Web** (viz propojení Postgres → API př
 1. Zkopíruj **veřejnou URL** služby **API** (Settings → Networking → veřejná doména, tvar `https://….up.railway.app`).
 2. Služba **Web** → **Variables** → přidej **`VITE_API_URL`** = přesně ta URL API (bez koncového `/`).  
    **Důležité:** Vite proměnné `VITE_*` se zapisují **při buildu** — po změně musíš u **Web** spustit **nový deploy** (rebuild).
-3. Služba **API** (ne Web) → **Variables** → **`CORS_ORIGIN`** = veřejná URL **webu** (`https://web-production-….up.railway.app`). Stejný účel mají i **`WEB_ORIGIN`**, **`FRONTEND_ORIGIN`**, **`ALLOWED_ORIGINS`** (nebo jen hostname v **`WEB_PUBLIC_DOMAIN`**). Víc originů odděl čárkou; koncové `/` API ignoruje.  
-   Po deployi API musí log ukázat `[cors] povolené originy: https://…` — když tam pořád je jen `localhost`, proměnná se do **této** služby nedostala (nebo je prázdná reference `${{…}}`).
+3. Služba **API** (ne Web) → **Variables** → **`CORS_ORIGIN`** = veřejná URL **webu** (`https://web-production-….up.railway.app`) **a URL služby Provoz** (čárkou). Stejný účel mají i **`WEB_ORIGIN`**, **`FRONTEND_ORIGIN`**, **`ALLOWED_ORIGINS`**. Koncové `/` API ignoruje.  
+   Po deployi API musí log ukázat `[cors] povolené originy: https://…` — když tam pořád je jen `localhost`, proměnná se do **této** služby nedostala.
 4. Po změně `CORS_ORIGIN` znovu **deploy API** (restart).
 
 Kontrola: v prohlížeči `GET …/health` na API → `{ "ok": true }`. Z webu v DevTools → síť: požadavky na `/api/...` jdou na doménu z `VITE_API_URL`.
@@ -119,8 +130,9 @@ Přihlášení admina odpovídá **`ADMIN_EMAIL`** / **`ADMIN_PASSWORD`** v prom
 
 | Služba | Root (typicky) | Build | Start | Klíčové proměnné |
 |--------|----------------|-------|-------|------------------|
-| **API** | **`api`** (doporučeno kvůli `api/Dockerfile`) nebo monorepo root | Railpack: `npm install` + `npm run build`; Docker: viz `api/Dockerfile` | `npm start` / `node dist/index.js` | `DATABASE_URL`, `SESSION_SECRET`, `CORS_ORIGIN`, volitelně `MIGRATE_ON_START`, R2 |
-| **Web** | kořen repa | Doporučeno: **`Dockerfile`** v kořeni (explicitní `dist` ve image). Jinak Railpack: `npm install && npm run build`, `npm run start` | `npm run start` nebo CMD z Dockerfile | **`VITE_API_URL`** před buildem — **ne** `CORS_ORIGIN` |
+| **API** | **`api`** (doporučeno kvůli `api/Dockerfile`) nebo monorepo root | Railpack: `npm install` + `npm run build`; Docker: viz `api/Dockerfile` | `npm start` / `node dist/index.js` | `DATABASE_URL`, `SESSION_SECRET`, `CORS_ORIGIN` (web **+ Provoz**), volitelně `MIGRATE_ON_START`, R2, SMTP |
+| **Web** | kořen repa | Doporučeno: **`Dockerfile`** v kořeni | `npm run start` / CMD z Dockerfile | **`VITE_API_URL`**, **`VITE_PROVOZ_APP_URL`** před buildem — **ne** `CORS_ORIGIN` |
+| **Provoz** | **`provoz-app`** | **`provoz-app/Dockerfile`** | `serve dist` | **`VITE_API_URL`** před buildem |
 
 **Railway → Web → Networking:** veřejná doména musí směřovat na **stejný port**, na kterém app naslouchá — typicky proměnná **`PORT`** (často `8080`). Nenastavuj ručně **5173** (to je Vite dev); jinak uvidíš „Application failed to respond“ i při běžícím `serve`.
 

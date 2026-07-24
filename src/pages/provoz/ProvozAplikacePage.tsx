@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Button } from '@/app/components/ui/button';
 import { usePermissions } from '@/lib/usePermissions';
 import { canAccessProvoz } from '@/lib/permissions';
 
-type BeforeInstallPromptEvent = Event & {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
-};
+function getProvozAppUrl(): string {
+  const fromEnv = (import.meta.env.VITE_PROVOZ_APP_URL as string | undefined)?.trim();
+  if (fromEnv) return fromEnv.replace(/\/$/, '');
+  if (import.meta.env.DEV) return 'http://localhost:5174';
+  return 'https://provoz.stagebistro.cz';
+}
 
 function detectPlatform(): 'ios' | 'android' | 'desktop' {
   const ua = navigator.userAgent || '';
@@ -18,61 +20,19 @@ function detectPlatform(): 'ios' | 'android' | 'desktop' {
 
 export default function ProvozAplikacePage() {
   const { permissions } = usePermissions();
-  const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);
-  const [installed, setInstalled] = useState(false);
-  const [installing, setInstalling] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [platform, setPlatform] = useState<'ios' | 'android' | 'desktop'>('desktop');
+  const platform = detectPlatform();
 
-  const installUrl = useMemo(() => {
-    if (typeof window === 'undefined') return '/provoz/objednavky';
-    return `${window.location.origin}/provoz/objednavky`;
-  }, []);
+  const appUrl = useMemo(() => getProvozAppUrl(), []);
 
   const qrUrl = useMemo(() => {
-    const data = encodeURIComponent(installUrl);
+    const data = encodeURIComponent(appUrl);
     return `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data=${data}`;
-  }, [installUrl]);
-
-  useEffect(() => {
-    setPlatform(detectPlatform());
-    const standalone =
-      window.matchMedia('(display-mode: standalone)').matches ||
-      // iOS Safari
-      Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
-    setInstalled(standalone);
-
-    const onBip = (e: Event) => {
-      e.preventDefault();
-      setDeferred(e as BeforeInstallPromptEvent);
-    };
-    const onInstalled = () => {
-      setInstalled(true);
-      setDeferred(null);
-    };
-    window.addEventListener('beforeinstallprompt', onBip);
-    window.addEventListener('appinstalled', onInstalled);
-    return () => {
-      window.removeEventListener('beforeinstallprompt', onBip);
-      window.removeEventListener('appinstalled', onInstalled);
-    };
-  }, []);
-
-  async function handleInstall() {
-    if (!deferred) return;
-    setInstalling(true);
-    try {
-      await deferred.prompt();
-      await deferred.userChoice;
-      setDeferred(null);
-    } finally {
-      setInstalling(false);
-    }
-  }
+  }, [appUrl]);
 
   async function copyLink() {
     try {
-      await navigator.clipboard.writeText(installUrl);
+      await navigator.clipboard.writeText(appUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -93,43 +53,30 @@ export default function ProvozAplikacePage() {
           className="mx-auto h-28 w-28 rounded-2xl border border-black/10"
         />
         <div>
-          <h2 className="text-xl font-medium tracking-tight">Aplikace na telefon</h2>
+          <h2 className="text-xl font-medium tracking-tight">Mobilní aplikace Provoz</h2>
           <p className="mt-2 text-sm text-black/60">
-            Nejde o stahování z App Store / Google Play. Je to webová aplikace (PWA), kterou si přidáte
-            na plochu telefonu — pak se otevře jako běžná appka.
+            Samostatná appka jen na objednávky surovin a focení účtenek. Nainstalujete ji z telefonu
+            (PWA) — není v App Store / Google Play.
           </p>
         </div>
+        <Button type="button" className="h-12 w-full" asChild>
+          <a href={appUrl} target="_blank" rel="noreferrer">
+            Otevřít aplikaci
+          </a>
+        </Button>
       </section>
 
-      {installed ? (
-        <section className="border border-black/10 bg-black/[0.02] p-4 text-sm">
-          Aplikace už běží v režimu na ploše. Ikona <strong>Provoz</strong> by měla být mezi ostatními appkami.
-        </section>
-      ) : (
-        <section className="space-y-3">
-          {deferred ? (
-            <Button type="button" className="h-12 w-full" disabled={installing} onClick={() => void handleInstall()}>
-              {installing ? 'Instaluji…' : 'Nainstalovat Stage Bistro – provoz'}
-            </Button>
-          ) : (
-            <p className="text-sm text-black/60">
-              {platform === 'ios'
-                ? 'Na iPhonu prohlížeč nenabízí tlačítko instalace — použijte postup níže (Přidat na plochu).'
-                : platform === 'android'
-                  ? 'Otevřete tuto stránku v Chrome na telefonu. Pokud se tlačítko neobjeví, použijte menu prohlížeče → „Nainstalovat aplikaci“ / „Přidat na plochu“.'
-                  : 'Na počítači naskenujte QR kód telefonem, nebo zkopírujte odkaz a otevřete ho v mobilním Chrome / Safari.'}
-            </p>
-          )}
-        </section>
-      )}
-
       <section className="space-y-3 border border-black/10 p-4">
-        <h3 className="font-medium">Otevřít na telefonu</h3>
-        <p className="text-sm text-black/60">Naskenujte QR nebo zkopírujte odkaz (po přihlášení otevře Objednávky).</p>
+        <h3 className="font-medium">QR kód na telefon</h3>
+        <p className="text-sm text-black/60">
+          {platform === 'desktop'
+            ? 'Naskenujte telefonem, přihlaste se a přidejte appku na plochu.'
+            : 'Otevřete odkaz níže v prohlížeči a přidejte na plochu.'}
+        </p>
         <div className="flex justify-center bg-white p-3">
           <img src={qrUrl} alt="QR kód na provozní aplikaci" width={220} height={220} className="h-[220px] w-[220px]" />
         </div>
-        <p className="break-all text-center text-xs text-black/50">{installUrl}</p>
+        <p className="break-all text-center text-xs text-black/50">{appUrl}</p>
         <Button type="button" variant="outline" className="w-full" onClick={() => void copyLink()}>
           {copied ? 'Zkopírováno' : 'Kopírovat odkaz'}
         </Button>
@@ -138,10 +85,9 @@ export default function ProvozAplikacePage() {
       <section className="space-y-3 border border-black/10 p-4 text-sm">
         <h3 className="font-medium">iPhone (Safari)</h3>
         <ol className="list-decimal space-y-1 pl-5 text-black/70">
-          <li>Otevřete odkaz výše v Safari (ne v Chrome).</li>
-          <li>Přihlaste se do provozu.</li>
-          <li>Klepněte na Sdílet (čtverec se šipkou nahoru).</li>
-          <li>Zvolte „Přidat na plochu“ → Přidat.</li>
+          <li>Otevřete odkaz výše v Safari.</li>
+          <li>Přihlaste se.</li>
+          <li>Sdílet → „Přidat na plochu“ → Přidat.</li>
         </ol>
       </section>
 
@@ -149,11 +95,14 @@ export default function ProvozAplikacePage() {
         <h3 className="font-medium">Android (Chrome)</h3>
         <ol className="list-decimal space-y-1 pl-5 text-black/70">
           <li>Otevřete odkaz v Chrome.</li>
-          <li>Přihlaste se do provozu.</li>
-          <li>Menu (⋮) → „Nainstalovat aplikaci“ nebo „Přidat na plochu“.</li>
-          <li>Nebo použijte zelené tlačítko nahoře, pokud ho Chrome nabídne.</li>
+          <li>Přihlaste se.</li>
+          <li>Menu (⋮) → „Nainstalovat aplikaci“ / „Přidat na plochu“.</li>
         </ol>
       </section>
+
+      <p className="text-xs text-black/50">
+        Správa dodavatelů a šablon mailů zůstává na webu v záložce Dodavatelé.
+      </p>
     </div>
   );
 }

@@ -90,13 +90,13 @@ function getCorsOriginsEnvRaw(): string | undefined {
 function parseCorsOrigins(): string[] {
   const raw = getCorsOriginsEnvRaw();
   if (raw == null || !raw) {
-    return ['http://localhost:5173'];
+    return ['http://localhost:5173', 'http://localhost:5174'];
   }
   const list = raw
     .split(',')
     .map((s) => stripEnvValue(s))
     .filter(Boolean);
-  return list.length > 0 ? list : ['http://localhost:5173'];
+  return list.length > 0 ? list : ['http://localhost:5173', 'http://localhost:5174'];
 }
 
 const corsOriginsRaw = parseCorsOrigins();

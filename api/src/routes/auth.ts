@@ -43,7 +43,7 @@ authRouter.post('/login', async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = loginSchema.safeParse(body);
   if (!parsed.success) {
-    return c.json({ error: 'Invalid body' }, 400);
+    return c.json({ error: 'Neplatné údaje — zkontrolujte e-mail a heslo' }, 400);
   }
   const { email, password } = parsed.data;
   const db = getDb();
@@ -51,7 +51,7 @@ authRouter.post('/login', async (c) => {
   const found = await db.select().from(users).where(eq(users.email, emailNorm)).limit(1);
   const user = found[0];
   if (!user || !user.isActive || !(await bcrypt.compare(password, user.passwordHash))) {
-    return c.json({ error: 'Invalid credentials' }, 401);
+    return c.json({ error: 'Neplatný e-mail nebo heslo' }, 401);
   }
   await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, user.id));
   const { sessionId, expiresAt } = await createSession(user.id);

@@ -20,7 +20,10 @@
     "api:start": "npm run start -w @stagebistro/api",
     "api:seed": "npm run seed -w @stagebistro/api",
     "api:seed:prod": "npm run seed:prod -w @stagebistro/api",
-    "api:migrate": "npm run db:migrate -w @stagebistro/api"
+    "api:migrate": "npm run db:migrate -w @stagebistro/api",
+    "provoz:dev": "npm --prefix provoz-app run dev",
+    "provoz:build": "npm --prefix provoz-app run build",
+    "provoz:preview": "npm --prefix provoz-app run preview"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.69.0",
