@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarDays, Check, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { CalendarDays, Check, ChevronLeft, ChevronRight, Loader2, X } from 'lucide-react';
 import {
   fetchActiveWorkers,
   fetchMonthCalendar,
   hasPermission,
   saveMonthPlan,
+  type CalendarAssignment,
   type CalendarDay,
   type StaffWorker,
 } from '@/lib/provozApi';
@@ -12,6 +13,8 @@ import {
 const BRAND: React.CSSProperties = { fontFamily: "'Montserrat', sans-serif" };
 const BODY: React.CSSProperties = { fontFamily: "'DM Sans', sans-serif" };
 const WEEKDAYS = ['PO', 'ÚT', 'ST', 'ČT', 'PÁ', 'SO', 'NE'];
+
+type Mode = 'overview' | 'person';
 
 function weekdayMon0(dateStr: string): number {
   const d = new Date(`${dateStr}T12:00:00`);
@@ -37,6 +40,7 @@ type Props = {
 export function ShiftsTab({ permissions }: Props) {
   const canPlan = hasPermission(permissions, 'staff.shifts');
 
+  const [mode, setMode] = useState<Mode>('overview');
   const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [year, mon] = month.split('-').map(Number);
 
@@ -44,6 +48,8 @@ export function ShiftsTab({ permissions }: Props) {
   const [days, setDays] = useState<CalendarDay[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   const [workerId, setWorkerId] = useState('');
   const [planStart, setPlanStart] = useState('10:00');
@@ -73,8 +79,14 @@ export function ShiftsTab({ permissions }: Props) {
 
   useEffect(() => {
     void load();
+    setSelectedDate(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [month, canPlan]);
+
+  const selectedDay = useMemo(
+    () => (selectedDate ? days.find((d) => d.date === selectedDate) ?? null : null),
+    [days, selectedDate]
+  );
 
   const workerShifts = useMemo(() => {
     if (!workerId) return [];
@@ -228,179 +240,338 @@ export function ShiftsTab({ permissions }: Props) {
         </button>
       </div>
 
-      <div className="px-4 space-y-3 pb-4">
-        <div>
-          <label style={BRAND} className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground">
-            Brigádník
-          </label>
-          <select
-            value={workerId}
-            onChange={(e) => {
-              setWorkerId(e.target.value);
-              setPlanDirty(false);
-              setMessage(null);
-            }}
-            className="mt-1 w-full bg-secondary border border-border px-3 py-3 text-sm text-foreground outline-none"
+      <div className="px-4 pb-3">
+        <div className="flex border border-border">
+          <button
+            type="button"
+            onClick={() => setMode('overview')}
+            className={`flex-1 py-2.5 text-[10px] uppercase tracking-[0.14em] font-semibold ${
+              mode === 'overview' ? 'bg-foreground text-background' : 'text-muted-foreground'
+            }`}
+            style={BRAND}
           >
-            <option value="">Vyberte…</option>
-            {workers.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.firstName} {w.lastName}
-              </option>
-            ))}
-          </select>
+            Přehled
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('person')}
+            className={`flex-1 py-2.5 text-[10px] uppercase tracking-[0.14em] font-semibold border-l border-border ${
+              mode === 'person' ? 'bg-foreground text-background' : 'text-muted-foreground'
+            }`}
+            style={BRAND}
+          >
+            Plánovat osobu
+          </button>
         </div>
+      </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label style={BRAND} className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground">
-              Od
-            </label>
-            <input
-              type="time"
-              value={planStart}
-              onChange={(e) => {
-                setPlanStart(e.target.value);
-                setPlanDirty(true);
-              }}
-              className="mt-1 w-full bg-secondary border border-border px-3 py-3 text-sm text-foreground outline-none"
-            />
-          </div>
-          <div>
-            <label style={BRAND} className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground">
-              Do
-            </label>
-            <input
-              type="time"
-              value={planEnd}
-              onChange={(e) => {
-                setPlanEnd(e.target.value);
-                setPlanDirty(true);
-              }}
-              className="mt-1 w-full bg-secondary border border-border px-3 py-3 text-sm text-foreground outline-none"
-            />
-          </div>
-        </div>
+      {mode === 'overview' && (
+        <div className="px-4 space-y-3 pb-6">
+          <p className="text-xs text-muted-foreground">
+            Klikněte na den pro detail směn.
+          </p>
 
-        {workerId && (
-          <>
-            <div className="flex flex-wrap gap-2">
-              {(
-                [
-                  ['weekdays', 'Po–Pá'],
-                  ['weekend', 'So–Ne'],
-                  ['all', 'Celý měsíc'],
-                  ['clear', 'Vymazat'],
-                ] as const
-              ).map(([kind, label]) => (
-                <button
-                  key={kind}
-                  type="button"
-                  onClick={() => selectByWeekday(kind)}
-                  className="px-3 py-2 text-[11px] border border-border text-muted-foreground active:bg-secondary"
+          <div className="border border-border">
+            <div className="grid grid-cols-7 bg-secondary text-center">
+              {WEEKDAYS.map((d) => (
+                <div
+                  key={d}
                   style={BRAND}
+                  className="py-2 text-[9px] font-semibold tracking-[0.12em] text-muted-foreground"
                 >
-                  {label}
-                </button>
+                  {d}
+                </div>
               ))}
             </div>
-
-            <p className="text-xs text-muted-foreground">
-              Vybraných dní: <span className="text-foreground">{planDates.size}</span>
-              {lockedDates.size > 0 && (
-                <span> · {lockedDates.size} potvrzených nelze zrušit</span>
-              )}
-            </p>
-
-            <div className="border border-border">
-              <div className="grid grid-cols-7 bg-secondary text-center">
-                {WEEKDAYS.map((d) => (
-                  <div
-                    key={d}
-                    style={BRAND}
-                    className="py-2 text-[9px] font-semibold tracking-[0.12em] text-muted-foreground"
+            <div className="grid grid-cols-7">
+              {days.map((day, i) => {
+                const isSelected = day.date === selectedDate;
+                const shown = day.assignments.slice(0, 3);
+                const more = day.assignments.length - shown.length;
+                return (
+                  <button
+                    key={day.date ?? `pad-${i}`}
+                    type="button"
+                    disabled={!day.date}
+                    onClick={() => day.date && setSelectedDate(day.date === selectedDate ? null : day.date)}
+                    className={[
+                      'min-h-[78px] border-t border-r border-border p-1 text-left align-top',
+                      !day.date ? 'bg-background/40 cursor-default' : 'bg-background active:bg-secondary',
+                      isSelected ? 'ring-1 ring-inset ring-foreground' : '',
+                    ].join(' ')}
                   >
-                    {d}
-                  </div>
+                    {day.dayOfMonth != null && (
+                      <span className="text-xs font-medium block mb-0.5">{day.dayOfMonth}</span>
+                    )}
+                    {day.events[0] && (
+                      <p className="text-[8px] leading-tight text-muted-foreground line-clamp-1 mb-0.5">
+                        {day.events[0].titleCz}
+                      </p>
+                    )}
+                    <ul className="space-y-0.5">
+                      {shown.map((a) => (
+                        <li key={a.id} className="text-[8px] leading-tight">
+                          <span
+                            className={
+                              a.attendanceStatus === 'confirmed'
+                                ? 'text-green-500'
+                                : 'text-foreground/80'
+                            }
+                          >
+                            {a.firstName} {a.lastName.charAt(0)}.
+                          </span>
+                          <span className="block text-muted-foreground">
+                            {a.plannedStart}–{a.plannedEnd}
+                          </span>
+                        </li>
+                      ))}
+                      {more > 0 && (
+                        <li className="text-[8px] text-muted-foreground">+{more}</li>
+                      )}
+                    </ul>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {selectedDate && selectedDay && (
+            <DayDetail
+              date={selectedDate}
+              eventTitle={selectedDay.events[0]?.titleCz}
+              assignments={selectedDay.assignments}
+              onClose={() => setSelectedDate(null)}
+            />
+          )}
+
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </div>
+      )}
+
+      {mode === 'person' && (
+        <div className="px-4 space-y-3 pb-6">
+          <p className="text-xs text-muted-foreground">
+            Vyberte osobu, nastavte čas a označte dny. Pak uložte celý měsíc.
+          </p>
+
+          <div>
+            <label style={BRAND} className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground">
+              Brigádník
+            </label>
+            <select
+              value={workerId}
+              onChange={(e) => {
+                setWorkerId(e.target.value);
+                setPlanDirty(false);
+                setMessage(null);
+              }}
+              className="mt-1 w-full bg-secondary border border-border px-3 py-3 text-sm text-foreground outline-none"
+            >
+              <option value="">Vyberte…</option>
+              {workers.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.firstName} {w.lastName}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label style={BRAND} className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground">
+                Od
+              </label>
+              <input
+                type="time"
+                value={planStart}
+                onChange={(e) => {
+                  setPlanStart(e.target.value);
+                  setPlanDirty(true);
+                }}
+                className="mt-1 w-full bg-secondary border border-border px-3 py-3 text-sm text-foreground outline-none"
+              />
+            </div>
+            <div>
+              <label style={BRAND} className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground">
+                Do
+              </label>
+              <input
+                type="time"
+                value={planEnd}
+                onChange={(e) => {
+                  setPlanEnd(e.target.value);
+                  setPlanDirty(true);
+                }}
+                className="mt-1 w-full bg-secondary border border-border px-3 py-3 text-sm text-foreground outline-none"
+              />
+            </div>
+          </div>
+
+          {workerId && (
+            <>
+              <div className="flex flex-wrap gap-2">
+                {(
+                  [
+                    ['weekdays', 'Po–Pá'],
+                    ['weekend', 'So–Ne'],
+                    ['all', 'Celý měsíc'],
+                    ['clear', 'Vymazat'],
+                  ] as const
+                ).map(([kind, label]) => (
+                  <button
+                    key={kind}
+                    type="button"
+                    onClick={() => selectByWeekday(kind)}
+                    className="px-3 py-2 text-[11px] border border-border text-muted-foreground active:bg-secondary"
+                    style={BRAND}
+                  >
+                    {label}
+                  </button>
                 ))}
               </div>
-              <div className="grid grid-cols-7">
-                {days.map((day, i) => {
-                  const selected = Boolean(day.date && planDates.has(day.date));
-                  const locked = Boolean(day.date && lockedDates.has(day.date));
-                  const assignment = day.date
-                    ? day.assignments.find((a) => a.workerId === workerId)
-                    : undefined;
-                  return (
-                    <button
-                      key={day.date ?? `pad-${i}`}
-                      type="button"
-                      disabled={!day.date}
-                      onClick={() => day.date && toggleDate(day.date)}
-                      className={[
-                        'min-h-[52px] border-t border-r border-border p-1 text-left',
-                        !day.date ? 'bg-background/40 cursor-default' : '',
-                        selected ? 'bg-foreground text-background' : 'bg-background',
-                        day.date ? 'active:opacity-80' : '',
-                      ].join(' ')}
+
+              <p className="text-xs text-muted-foreground">
+                Vybraných dní: <span className="text-foreground">{planDates.size}</span>
+                {lockedDates.size > 0 && (
+                  <span> · {lockedDates.size} potvrzených nelze zrušit</span>
+                )}
+              </p>
+
+              <div className="border border-border">
+                <div className="grid grid-cols-7 bg-secondary text-center">
+                  {WEEKDAYS.map((d) => (
+                    <div
+                      key={d}
+                      style={BRAND}
+                      className="py-2 text-[9px] font-semibold tracking-[0.12em] text-muted-foreground"
                     >
-                      {day.dayOfMonth != null && (
-                        <span className="text-xs font-medium block">{day.dayOfMonth}</span>
-                      )}
-                      {selected && (
-                        <span className="text-[9px] opacity-70 block mt-0.5">
-                          {assignment
-                            ? `${assignment.plannedStart}–${assignment.plannedEnd}`
-                            : 'nová'}
-                          {locked ? ' ✓' : ''}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
+                      {d}
+                    </div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-7">
+                  {days.map((day, i) => {
+                    const selected = Boolean(day.date && planDates.has(day.date));
+                    const locked = Boolean(day.date && lockedDates.has(day.date));
+                    const assignment = day.date
+                      ? day.assignments.find((a) => a.workerId === workerId)
+                      : undefined;
+                    return (
+                      <button
+                        key={day.date ?? `pad-${i}`}
+                        type="button"
+                        disabled={!day.date}
+                        onClick={() => day.date && toggleDate(day.date)}
+                        className={[
+                          'min-h-[52px] border-t border-r border-border p-1 text-left',
+                          !day.date ? 'bg-background/40 cursor-default' : '',
+                          selected ? 'bg-foreground text-background' : 'bg-background',
+                          day.date ? 'active:opacity-80' : '',
+                        ].join(' ')}
+                      >
+                        {day.dayOfMonth != null && (
+                          <span className="text-xs font-medium block">{day.dayOfMonth}</span>
+                        )}
+                        {selected && (
+                          <span className="text-[9px] opacity-70 block mt-0.5">
+                            {assignment
+                              ? `${assignment.plannedStart}–${assignment.plannedEnd}`
+                              : 'nová'}
+                            {locked ? ' ✓' : ''}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
 
-            <button
-              type="button"
-              disabled={!planDirty || saving}
-              onClick={() => void handleSave()}
-              className="w-full bg-foreground text-background py-3.5 disabled:opacity-40 flex items-center justify-center gap-2"
-              style={BRAND}
-            >
-              {saving ? (
-                <Loader2 className="animate-spin" size={18} />
-              ) : (
-                <Check size={18} />
-              )}
-              <span className="text-xs font-semibold uppercase tracking-[0.16em]">
-                {saving ? 'Ukládám…' : 'Uložit plán měsíce'}
-              </span>
-            </button>
-
-            {planDirty && (
               <button
                 type="button"
-                className="w-full py-2 text-xs text-muted-foreground"
-                onClick={() => {
-                  setPlanDates(new Set(savedDatesKey ? savedDatesKey.split(',') : []));
-                  setPlanDirty(false);
-                  setMessage(null);
-                }}
+                disabled={!planDirty || saving}
+                onClick={() => void handleSave()}
+                className="w-full bg-foreground text-background py-3.5 disabled:opacity-40 flex items-center justify-center gap-2"
+                style={BRAND}
               >
-                Zahodit změny
+                {saving ? (
+                  <Loader2 className="animate-spin" size={18} />
+                ) : (
+                  <Check size={18} />
+                )}
+                <span className="text-xs font-semibold uppercase tracking-[0.16em]">
+                  {saving ? 'Ukládám…' : 'Uložit plán měsíce'}
+                </span>
               </button>
-            )}
-          </>
-        )}
 
-        {error && (
-          <p className="text-sm text-destructive">{error}</p>
-        )}
-        {message && (
-          <p className="text-sm text-muted-foreground">{message}</p>
-        )}
+              {planDirty && (
+                <button
+                  type="button"
+                  className="w-full py-2 text-xs text-muted-foreground"
+                  onClick={() => {
+                    setPlanDates(new Set(savedDatesKey ? savedDatesKey.split(',') : []));
+                    setPlanDirty(false);
+                    setMessage(null);
+                  }}
+                >
+                  Zahodit změny
+                </button>
+              )}
+            </>
+          )}
+
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          {message && <p className="text-sm text-muted-foreground">{message}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DayDetail({
+  date,
+  eventTitle,
+  assignments,
+  onClose,
+}: {
+  date: string;
+  eventTitle?: string;
+  assignments: CalendarAssignment[];
+  onClose: () => void;
+}) {
+  return (
+    <div className="border border-border bg-secondary/40 p-3 space-y-2">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p style={BRAND} className="text-[10px] font-semibold uppercase tracking-[0.14em]">
+            {date}
+          </p>
+          {eventTitle && (
+            <p className="text-xs text-muted-foreground mt-0.5">{eventTitle}</p>
+          )}
+        </div>
+        <button type="button" onClick={onClose} className="p-1 text-muted-foreground" aria-label="Zavřít">
+          <X size={16} />
+        </button>
       </div>
+      {assignments.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Žádné směny.</p>
+      ) : (
+        <ul className="space-y-2">
+          {assignments.map((a) => (
+            <li key={a.id} className="text-sm flex justify-between gap-2 border-t border-border pt-2 first:border-0 first:pt-0">
+              <span>
+                {a.firstName} {a.lastName}
+                {a.attendanceStatus === 'confirmed' && (
+                  <span className="text-green-500 text-xs"> · potvrzeno</span>
+                )}
+              </span>
+              <span className="text-muted-foreground shrink-0">
+                {a.plannedStart}–{a.plannedEnd}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
