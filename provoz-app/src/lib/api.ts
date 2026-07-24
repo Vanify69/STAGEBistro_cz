@@ -1,9 +1,11 @@
 const trimSlash = (s: string) => s.replace(/\/$/, '');
 
+/** Vite env sometimes set without scheme (`api.example.com`) — that breaks fetch. */
 export function getApiBase(): string {
-  const fromEnv = import.meta.env.VITE_API_URL as string | undefined;
-  if (fromEnv && fromEnv.length > 0) return trimSlash(fromEnv);
-  return '';
+  const raw = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
+  if (!raw) return '';
+  const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  return trimSlash(withScheme);
 }
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {

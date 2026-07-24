@@ -5,9 +5,12 @@ import { canAccessProvoz } from '@/lib/permissions';
 
 function getProvozAppUrl(): string {
   const fromEnv = (import.meta.env.VITE_PROVOZ_APP_URL as string | undefined)?.trim();
-  if (fromEnv) return fromEnv.replace(/\/$/, '');
+  if (fromEnv) {
+    const withScheme = /^https?:\/\//i.test(fromEnv) ? fromEnv : `https://${fromEnv}`;
+    return withScheme.replace(/\/$/, '');
+  }
   if (import.meta.env.DEV) return 'http://localhost:5174';
-  return 'https://provoz.stagebistro.cz';
+  return 'https://app.stagebistro.cz';
 }
 
 function detectPlatform(): 'ios' | 'android' | 'desktop' {

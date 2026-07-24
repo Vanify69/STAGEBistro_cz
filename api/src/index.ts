@@ -53,8 +53,10 @@ function isRailwayWebOrigin(origin: string): boolean {
   const key = originKey(origin);
   return (
     /^https:\/\/web-production-[a-z0-9-]+\.up\.railway\.app$/i.test(key) ||
+    /^https:\/\/[a-z0-9-]+\.up\.railway\.app$/i.test(key) ||
     key === 'https://www.stagebistro.cz' ||
-    key === 'https://stagebistro.cz'
+    key === 'https://stagebistro.cz' ||
+    key === 'https://app.stagebistro.cz'
   );
 }
 
@@ -138,6 +140,11 @@ if (process.env.RAILWAY_ENVIRONMENT) {
   }
 }
 console.log('[cors] povolené originy:', corsOriginsRaw.join(' | '));
+if (process.env.RAILWAY_ENVIRONMENT) {
+  console.log(
+    '[cors] tip: pro www + app musí CORS_ORIGIN obsahovat např. https://www.stagebistro.cz,https://app.stagebistro.cz — po změně Redeploy API'
+  );
+}
 
 /**
  * Vlastní CORS: vestavěné `hono/cors` u některých verzí nastaví Allow-Origin před `next()`,
