@@ -103,19 +103,29 @@ function parseCorsOrigins(): string[] {
 
 const corsOriginsRaw = parseCorsOrigins();
 const corsOriginKeys = new Set(corsOriginsRaw.map(originKey));
-const isRailwayFallbackMode =
-  !!process.env.RAILWAY_ENVIRONMENT &&
-  corsOriginsRaw.length === 1 &&
-  corsOriginsRaw[0] === 'http://localhost:5173';
+
+/** Fallback jen když v CORS_ORIGIN nejsou žádné produkční/custom originy (jen localhost). */
+const onlyLocalhostOrigins = corsOriginsRaw.every((o) =>
+  originKey(o).startsWith('http://localhost')
+);
+const isRailwayFallbackMode = !!process.env.RAILWAY_ENVIRONMENT && onlyLocalhostOrigins;
+
+/** Na Railway vždy povolit známé Stage Bistro frontendy (CORS_ORIGIN často chybí / je jen na Web službě). */
+const PRODUCTION_WEB_ORIGINS = [
+  'https://www.stagebistro.cz',
+  'https://stagebistro.cz',
+  'https://app.stagebistro.cz',
+] as const;
+if (process.env.RAILWAY_ENVIRONMENT) {
+  for (const o of PRODUCTION_WEB_ORIGINS) corsOriginKeys.add(o);
+}
 
 if (process.env.RAILWAY_ENVIRONMENT) {
   const raw = getCorsOriginsEnvRaw();
-  const onlyLocalhost =
-    corsOriginsRaw.length === 1 && corsOriginsRaw[0]?.startsWith('http://localhost');
 
   if (raw === undefined) {
     console.warn(
-      '[cors] Žádná z proměnných pro origin (CORS_ORIGIN, WEB_ORIGIN, …) v tomto procesu není nastavená. Railway → vyber službu API (ne Web) → Variables → přidej CORS_ORIGIN = přesná URL webu (https://web-production-….up.railway.app) → Deploy.'
+      '[cors] Žádná z proměnných pro origin (CORS_ORIGIN, WEB_ORIGIN, …) v tomto procesu není nastavená. Railway → vyber službu API (ne Web) → Variables → přidej CORS_ORIGIN = https://www.stagebistro.cz,https://stagebistro.cz,https://app.stagebistro.cz → Deploy.'
     );
   } else if (!raw) {
     console.warn('[cors] CORS proměnná je prázdná — doplň URL webu včetně https://');
@@ -125,26 +135,23 @@ if (process.env.RAILWAY_ENVIRONMENT) {
     );
   }
 
-  if (onlyLocalhost) {
+  if (onlyLocalhostOrigins) {
     const related = Object.keys(process.env).filter((k) =>
       /CORS|ORIGIN|FRONTEND|WEB_PUBLIC/i.test(k)
     );
     console.warn(
-      '[cors] POZOR: povolen je jen výchozí localhost — prohlížeč z Railway webu dostane CORS chybu. ' +
-        'Ověř, že proměnná je u služby, která spouští tento log (API), ne u Web. ' +
-        `Nalezené klíče prostředí s „CORS/ORIGIN/…“: ${related.length ? related.join(', ') : '(žádné)'}.`
-    );
-    console.warn(
-      '[cors] Dočasný fallback aktivní: povolím origin https://www.stagebistro.cz, https://stagebistro.cz a také https://web-production-*.up.railway.app, dokud Railway nepředává CORS_ORIGIN do runtime.'
+      '[cors] POZOR: v CORS_ORIGIN jsou jen localhost — aktivuji Railway fallback + pevné Stage Bistro originy. ' +
+        'Ověř, že CORS_ORIGIN je u služby API, ne u Web. ' +
+        `Nalezené klíče: ${related.length ? related.join(', ') : '(žádné)'}.`
     );
   }
-}
-console.log('[cors] povolené originy:', corsOriginsRaw.join(' | '));
-if (process.env.RAILWAY_ENVIRONMENT) {
+
   console.log(
-    '[cors] tip: pro www + app musí CORS_ORIGIN obsahovat např. https://www.stagebistro.cz,https://app.stagebistro.cz — po změně Redeploy API'
+    '[cors] Railway: vždy povoleny také',
+    PRODUCTION_WEB_ORIGINS.join(' | ')
   );
 }
+console.log('[cors] povolené originy (env):', corsOriginsRaw.join(' | '));
 
 /**
  * Vlastní CORS: vestavěné `hono/cors` u některých verzí nastaví Allow-Origin před `next()`,
