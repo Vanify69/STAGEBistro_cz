@@ -26,13 +26,16 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
       },
     });
   } catch {
-    throw new Error('Nelze se připojit k API — spusťte `npm run api:dev` (port 3001)');
+    const hint = base
+      ? `Nelze se připojit k API (${base}). Zkontrolujte připojení, CORS a že API běží.`
+      : 'VITE_API_URL chybí — v produkci nastavte https://api.stagebistro.cz a rebuild APP.';
+    throw new Error(hint);
   }
   const text = await res.text();
   const trimmedStart = text.trimStart();
   if (trimmedStart.startsWith('<')) {
     throw new Error(
-      'API neodpovídá správně (HTML místo JSON). Spusťte `npm run api:dev` a zkontrolujte VITE_API_URL.'
+      'API neodpovídá správně (HTML místo JSON). Zkontrolujte VITE_API_URL.'
     );
   }
 
@@ -57,11 +60,13 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
           ? 'Nemáte oprávnění'
           : res.status === 404
             ? 'Nenalezeno'
-            : res.status === 502 || res.status === 503 || res.statusText === 'Internal Server Error'
-              ? 'API neodpovídá — spusťte `npm run api:dev` (port 3001)'
-              : res.status >= 500
-                ? 'Chyba serveru — zkuste to znovu'
-                : res.statusText || `HTTP ${res.status}`;
+            : res.status === 502
+              ? 'Odeslání selhalo (SMTP / server). Zkontrolujte SMTP_* na API.'
+              : res.status === 503
+                ? 'Služba nedostupná — často chybí SMTP nebo úložiště.'
+                : res.status >= 500
+                  ? 'Chyba serveru — zkuste to znovu'
+                  : res.statusText || `HTTP ${res.status}`;
     throw new Error(msgFromBody || fallback);
   }
   return data as T;

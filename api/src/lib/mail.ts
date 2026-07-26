@@ -38,20 +38,37 @@ export async function sendMail(input: SendMailInput): Promise<void> {
     port,
     secure,
     auth: pass ? { user, pass } : undefined,
+    connectionTimeout: 15_000,
+    greetingTimeout: 15_000,
+    socketTimeout: 30_000,
   });
+
+  try {
+    await transporter.verify();
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `SMTP nepřijímá spojení (${host}:${port}). Zkontrolujte SMTP_HOST/PORT/USER/PASS. Detail: ${detail}`
+    );
+  }
 
   const from = process.env.SMTP_FROM?.trim() || user;
 
-  await transporter.sendMail({
-    from,
-    to: input.to,
-    subject: input.subject,
-    text: input.text,
-    html: input.html,
-    attachments: input.attachments?.map((a) => ({
-      filename: a.filename,
-      content: a.content,
-      contentType: a.contentType,
-    })),
-  });
+  try {
+    await transporter.sendMail({
+      from,
+      to: input.to,
+      subject: input.subject,
+      text: input.text,
+      html: input.html,
+      attachments: input.attachments?.map((a) => ({
+        filename: a.filename,
+        content: a.content,
+        contentType: a.contentType,
+      })),
+    });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new Error(`Odeslání e-mailu přes SMTP selhalo: ${detail}`);
+  }
 }
