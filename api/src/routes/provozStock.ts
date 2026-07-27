@@ -67,7 +67,13 @@ provozStockRouter.get('/inventory-items', permInventoryRead, async (c) => {
         .from(inventoryItems)
         .where(eq(inventoryItems.active, true))
         .orderBy(asc(inventoryItems.sortOrder), asc(inventoryItems.name));
-  return c.json({ items: rows });
+  return c.json({
+    items: rows.map((row) => ({
+      ...row,
+      qtyOnHand: formatQty(parseQty(row.qtyOnHand) ?? 0),
+      minQty: row.minQty == null ? null : formatQty(parseQty(row.minQty) ?? 0),
+    })),
+  });
 });
 
 provozStockRouter.post('/inventory-items', permProvozStock, async (c) => {

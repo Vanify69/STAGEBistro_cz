@@ -9,10 +9,11 @@ export function parseQty(raw: string | null | undefined): number | null {
   return n;
 }
 
+/** Skladové množství: celá čísla, max. 1 desetina (např. 12 nebo 12.5). */
 export function formatQty(n: number): string {
   if (!Number.isFinite(n)) return '0';
-  const rounded = Math.round(n * 1_000_000) / 1_000_000;
-  return String(rounded);
+  const rounded = Math.round(n * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
 
 export function addQty(a: string | number, b: string | number): string {
