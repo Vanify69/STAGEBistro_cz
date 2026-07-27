@@ -15,6 +15,7 @@ import { permProvozStock, permInventoryRead } from '../lib/staffRoutePermissions
 import { auditAction, AUDIT_ACTIONS } from '../lib/auditLog.js';
 import { formatQty, parseQty } from '../lib/stockQty.js';
 import { computeSellableFromRecipe } from '../lib/storyous/applySaleDeduction.js';
+import { syncInventoryFromSupplierItems } from '../lib/syncInventoryFromSuppliers.js';
 
 export const provozStockRouter = new Hono<{ Variables: { user: AuthUser } }>();
 
@@ -39,6 +40,18 @@ const inventoryCountSchema = z.object({
       })
     )
     .min(1),
+});
+
+provozStockRouter.post('/inventory-items/sync-from-suppliers', permProvozStock, async (c) => {
+  const result = await syncInventoryFromSupplierItems();
+  await auditAction(c, {
+    action: AUDIT_ACTIONS.provoz.inventorySyncSuppliers,
+    entityType: 'inventory_item',
+    entityId: null,
+    summary: `Sync skladu z dodavatelů: +${result.created} surovin, ${result.linked} propojeno`,
+    metadata: result,
+  });
+  return c.json(result);
 });
 
 provozStockRouter.get('/inventory-items', permInventoryRead, async (c) => {

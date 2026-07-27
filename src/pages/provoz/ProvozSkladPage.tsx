@@ -90,6 +90,18 @@ export default function ProvozSkladPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['provoz', 'inventory-items'] }),
   });
 
+  const syncFromSuppliers = useMutation({
+    mutationFn: () =>
+      apiFetch<{ created: number; linked: number; reused: number; skipped: number }>(
+        '/api/provoz/inventory-items/sync-from-suppliers',
+        { method: 'POST', body: '{}' }
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['provoz', 'inventory-items'] });
+      qc.invalidateQueries({ queryKey: ['provoz', 'supplier-items'] });
+    },
+  });
+
   const submitCount = useMutation({
     mutationFn: () => {
       const items = itemsQuery.data?.items ?? [];
@@ -149,6 +161,43 @@ export default function ProvozSkladPage() {
 
       {mode === 'stock' && (
         <>
+          <section className="space-y-3 border border-black/10 p-4">
+            <h2 className="text-lg font-medium">Ze položek dodavatelů</h2>
+            <p className="text-sm text-black/60">
+              Vytvoří suroviny s množstvím 0 podle katalogu dodavatelů a propojí je. Stejný název +
+              jednotka = jedna surovina. Stav pak upravíte inventurou.
+            </p>
+            {syncFromSuppliers.isError && (
+              <p className="text-sm text-red-600">{(syncFromSuppliers.error as Error).message}</p>
+            )}
+            {syncFromSuppliers.data && (
+              <p className="text-sm text-green-700">
+                Hotovo: +{syncFromSuppliers.data.created} nových, {syncFromSuppliers.data.linked}{' '}
+                propojeno
+                {syncFromSuppliers.data.skipped
+                  ? `, ${syncFromSuppliers.data.skipped} už bylo napojených`
+                  : ''}
+                .
+              </p>
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              disabled={syncFromSuppliers.isPending}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    'Vytvořit / propojit suroviny podle všech položek dodavatelů (stav 0)?'
+                  )
+                ) {
+                  syncFromSuppliers.mutate();
+                }
+              }}
+            >
+              {syncFromSuppliers.isPending ? 'Synchronizuji…' : 'Vytvořit ze položek dodavatelů'}
+            </Button>
+          </section>
+
           <section className="space-y-4 border border-black/10 p-4">
             <h2 className="text-lg font-medium">Nová surovina</h2>
             <div className="grid gap-3 sm:grid-cols-4">

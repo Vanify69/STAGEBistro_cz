@@ -68,6 +68,7 @@ export const AUDIT_ACTIONS = {
     orderReceive: 'provoz.order.receive',
     inventoryItemCreate: 'provoz.inventory_item.create',
     inventoryItemUpdate: 'provoz.inventory_item.update',
+    inventorySyncSuppliers: 'provoz.inventory.sync_suppliers',
     inventoryCount: 'provoz.inventory.count',
     menuVisibility: 'provoz.menu.visibility',
     menuRecipeUpdate: 'site.menu.recipe.update',

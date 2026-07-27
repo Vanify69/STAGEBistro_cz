@@ -217,9 +217,23 @@ async function runMigrationsIfEnabled(): Promise<void> {
   }
 }
 
+/** Bezpečně opakovatelné: založí suroviny (0) z položek dodavatelů a propojí je. */
+async function syncInventoryFromSuppliersIfEnabled(): Promise<void> {
+  const flag = process.env.SYNC_INVENTORY_FROM_SUPPLIERS_ON_START;
+  if (flag === 'false' || flag === '0') return;
+  try {
+    const { syncInventoryFromSupplierItems } = await import('./lib/syncInventoryFromSuppliers.js');
+    const result = await syncInventoryFromSupplierItems();
+    console.log('[inventory] sync from suppliers:', result);
+  } catch (err) {
+    console.error('[inventory] sync from suppliers failed:', err);
+  }
+}
+
 const port = Number(process.env.PORT ?? '3001');
 
 runMigrationsIfEnabled()
+  .then(() => syncInventoryFromSuppliersIfEnabled())
   .then(() => {
     serve({ fetch: app.fetch, port, hostname: '0.0.0.0' });
     console.log(`API listening on http://0.0.0.0:${port}`);

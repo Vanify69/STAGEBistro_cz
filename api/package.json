@@ -12,6 +12,7 @@
     "db:push": "drizzle-kit push",
     "seed": "tsx src/seed.ts",
     "seed:prod": "node dist/seed.js",
+    "seed:inventory-from-suppliers": "tsx src/seedInventoryFromSuppliers.ts",
     "seed:strelak-may-2026": "tsx src/seedStrelakMay2026.ts"
   },
   "dependencies": {
