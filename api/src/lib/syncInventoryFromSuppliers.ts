@@ -1,6 +1,7 @@
 import { asc, eq } from 'drizzle-orm';
 import { getDb } from '../db/index.js';
 import { inventoryItems, supplierItems } from '../db/schema.js';
+import { getOstatniCategoryId } from './inventoryCategories.js';
 
 function stockKey(name: string, unit: string): string {
   return `${name.trim().toLowerCase()}|${unit.trim().toLowerCase()}`;
@@ -9,6 +10,7 @@ function stockKey(name: string, unit: string): string {
 /**
  * Pro každou položku dodavatele bez mapování založí surovinu (qty 0)
  * nebo znovu použije existující se stejným názvem+jednotkou a propojí FK.
+ * Nové suroviny padají do kategorie Ostatní.
  */
 export async function syncInventoryFromSupplierItems(): Promise<{
   created: number;
@@ -17,6 +19,7 @@ export async function syncInventoryFromSupplierItems(): Promise<{
   skipped: number;
 }> {
   const db = getDb();
+  const ostatniId = await getOstatniCategoryId();
   const [catalog, existingStock] = await Promise.all([
     db.select().from(supplierItems).orderBy(asc(supplierItems.sortOrder), asc(supplierItems.name)),
     db.select().from(inventoryItems),
@@ -49,6 +52,7 @@ export async function syncInventoryFromSupplierItems(): Promise<{
           unit: si.unit.trim() || 'ks',
           qtyOnHand: '0',
           minQty: null,
+          categoryId: ostatniId,
           active: si.active,
           sortOrder: si.sortOrder,
         })
@@ -58,6 +62,14 @@ export async function syncInventoryFromSupplierItems(): Promise<{
       created += 1;
     } else {
       reused += 1;
+      if (!inv.categoryId && ostatniId) {
+        await db
+          .update(inventoryItems)
+          .set({ categoryId: ostatniId, updatedAt: new Date() })
+          .where(eq(inventoryItems.id, inv.id));
+        inv = { ...inv, categoryId: ostatniId };
+        byKey.set(key, inv);
+      }
     }
 
     await db

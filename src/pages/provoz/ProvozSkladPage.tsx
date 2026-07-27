@@ -7,12 +7,21 @@ import { Label } from '@/app/components/ui/label';
 import { useProvozAuth } from '@/pages/provoz/useProvozAuth';
 import { usePermissions } from '@/lib/usePermissions';
 
+type InventoryCategory = {
+  id: string;
+  name: string;
+  sortOrder: number;
+  active: boolean;
+};
+
 type InventoryItem = {
   id: string;
   name: string;
   unit: string;
   qtyOnHand: string;
   minQty: string | null;
+  categoryId: string | null;
+  categoryName: string | null;
   active: boolean;
   sortOrder: number;
 };
@@ -46,13 +55,19 @@ export default function ProvozSkladPage() {
   const [unit, setUnit] = useState('ks');
   const [qtyOnHand, setQtyOnHand] = useState('0');
   const [minQty, setMinQty] = useState('');
+  const [categoryId, setCategoryId] = useState('');
+  const [newCatName, setNewCatName] = useState('');
   const [countDraft, setCountDraft] = useState<Record<string, string>>({});
   const [countNote, setCountNote] = useState('');
   const [mode, setMode] = useState<'stock' | 'inventory'>('stock');
+  const [filterCat, setFilterCat] = useState<string>('all');
 
   const itemsQuery = useQuery({
     queryKey: ['provoz', 'inventory-items', 'all'],
-    queryFn: () => apiFetch<{ items: InventoryItem[] }>('/api/provoz/inventory-items?all=1'),
+    queryFn: () =>
+      apiFetch<{ items: InventoryItem[]; categories: InventoryCategory[] }>(
+        '/api/provoz/inventory-items?all=1'
+      ),
     enabled: allowed && can('provoz.stock'),
   });
 
@@ -61,6 +76,9 @@ export default function ProvozSkladPage() {
     queryFn: () => apiFetch<{ movements: StockMovement[] }>('/api/provoz/stock-movements?limit=40'),
     enabled: allowed && can('provoz.stock') && mode === 'stock',
   });
+
+  const categories = itemsQuery.data?.categories ?? [];
+  const items = itemsQuery.data?.items ?? [];
 
   const createItem = useMutation({
     mutationFn: () =>
@@ -71,6 +89,7 @@ export default function ProvozSkladPage() {
           unit,
           qtyOnHand: qtyOnHand || '0',
           minQty: minQty || null,
+          categoryId: categoryId || null,
         }),
       }),
     onSuccess: () => {
@@ -79,6 +98,27 @@ export default function ProvozSkladPage() {
       setMinQty('');
       qc.invalidateQueries({ queryKey: ['provoz', 'inventory-items'] });
     },
+  });
+
+  const createCategory = useMutation({
+    mutationFn: () =>
+      apiFetch('/api/provoz/inventory-categories', {
+        method: 'POST',
+        body: JSON.stringify({ name: newCatName.trim() }),
+      }),
+    onSuccess: () => {
+      setNewCatName('');
+      qc.invalidateQueries({ queryKey: ['provoz', 'inventory-items'] });
+    },
+  });
+
+  const setItemCategory = useMutation({
+    mutationFn: (payload: { id: string; categoryId: string | null }) =>
+      apiFetch(`/api/provoz/inventory-items/${payload.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ categoryId: payload.categoryId }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['provoz', 'inventory-items'] }),
   });
 
   const toggleActive = useMutation({
@@ -104,7 +144,6 @@ export default function ProvozSkladPage() {
 
   const submitCount = useMutation({
     mutationFn: () => {
-      const items = itemsQuery.data?.items ?? [];
       const lines = items
         .filter((i) => i.active)
         .map((i) => ({
@@ -126,8 +165,27 @@ export default function ProvozSkladPage() {
     },
   });
 
-  const items = itemsQuery.data?.items ?? [];
   const nameById = useMemo(() => new Map(items.map((i) => [i.id, i.name])), [items]);
+
+  const filteredItems = useMemo(() => {
+    if (filterCat === 'all') return items;
+    if (filterCat === 'none') return items.filter((i) => !i.categoryId);
+    return items.filter((i) => i.categoryId === filterCat);
+  }, [items, filterCat]);
+
+  const groupedForCount = useMemo(() => {
+    const active = items.filter((i) => i.active);
+    const map = new Map<string, { title: string; sort: number; items: InventoryItem[] }>();
+    for (const item of active) {
+      const key = item.categoryId ?? 'none';
+      const title = item.categoryName ?? 'Bez kategorie';
+      const sort = categories.find((c) => c.id === item.categoryId)?.sortOrder ?? 999;
+      const bucket = map.get(key) ?? { title, sort, items: [] };
+      bucket.items.push(item);
+      map.set(key, bucket);
+    }
+    return [...map.values()].sort((a, b) => a.sort - b.sort || a.title.localeCompare(b.title, 'cs'));
+  }, [items, categories]);
 
   if (!can('provoz.stock')) {
     return <p className="text-sm text-black/60">Nemáte oprávnění ke skladu.</p>;
@@ -164,8 +222,8 @@ export default function ProvozSkladPage() {
           <section className="space-y-3 border border-black/10 p-4">
             <h2 className="text-lg font-medium">Ze položek dodavatelů</h2>
             <p className="text-sm text-black/60">
-              Vytvoří suroviny s množstvím 0 podle katalogu dodavatelů a propojí je. Stejný název +
-              jednotka = jedna surovina. Stav pak upravíte inventurou.
+              Vytvoří suroviny s množstvím 0 (kategorie Ostatní) a propojí je. Poté je můžete
+              roztřídit a inventurou nastavit stavy.
             </p>
             {syncFromSuppliers.isError && (
               <p className="text-sm text-red-600">{(syncFromSuppliers.error as Error).message}</p>
@@ -198,10 +256,35 @@ export default function ProvozSkladPage() {
             </Button>
           </section>
 
+          <section className="space-y-3 border border-black/10 p-4">
+            <h2 className="text-lg font-medium">Kategorie skladu</h2>
+            <ul className="flex flex-wrap gap-2 text-sm">
+              {categories.map((c) => (
+                <li key={c.id} className="border border-black/10 px-2 py-1">
+                  {c.name}
+                </li>
+              ))}
+            </ul>
+            <div className="flex flex-wrap gap-2 items-end">
+              <div className="flex-1 min-w-[180px]">
+                <Label>Nová kategorie</Label>
+                <Input value={newCatName} onChange={(e) => setNewCatName(e.target.value)} />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!newCatName.trim() || createCategory.isPending}
+                onClick={() => createCategory.mutate()}
+              >
+                Přidat
+              </Button>
+            </div>
+          </section>
+
           <section className="space-y-4 border border-black/10 p-4">
             <h2 className="text-lg font-medium">Nová surovina</h2>
-            <div className="grid gap-3 sm:grid-cols-4">
-              <div className="sm:col-span-2">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+              <div className="lg:col-span-2">
                 <Label>Název</Label>
                 <Input value={name} onChange={(e) => setName(e.target.value)} />
               </div>
@@ -214,7 +297,22 @@ export default function ProvozSkladPage() {
                 <Input value={qtyOnHand} onChange={(e) => setQtyOnHand(e.target.value)} />
               </div>
               <div>
-                <Label>Min. zásoba (volitelné)</Label>
+                <Label>Kategorie</Label>
+                <select
+                  className="h-9 w-full rounded-md border border-black/15 bg-white px-2 text-sm"
+                  value={categoryId}
+                  onChange={(e) => setCategoryId(e.target.value)}
+                >
+                  <option value="">Ostatní (výchozí)</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <Label>Min. zásoba</Label>
                 <Input value={minQty} onChange={(e) => setMinQty(e.target.value)} />
               </div>
             </div>
@@ -231,33 +329,68 @@ export default function ProvozSkladPage() {
           </section>
 
           <section className="space-y-3">
-            <h2 className="text-lg font-medium">Suroviny</h2>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-lg font-medium">Suroviny</h2>
+              <select
+                className="h-8 rounded-md border border-black/15 bg-white px-2 text-sm"
+                value={filterCat}
+                onChange={(e) => setFilterCat(e.target.value)}
+              >
+                <option value="all">Všechny kategorie</option>
+                <option value="none">Bez kategorie</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
             <ul className="divide-y divide-black/10 border border-black/10">
-              {items.map((item) => (
+              {filteredItems.map((item) => (
                 <li
                   key={item.id}
                   className={`flex flex-wrap items-center justify-between gap-2 px-3 py-3 text-sm ${
                     !item.active ? 'opacity-50' : ''
                   }`}
                 >
-                  <div>
+                  <div className="min-w-0">
                     <p className="font-medium">{item.name}</p>
                     <p className="text-black/55">
                       {item.qtyOnHand} {item.unit}
                       {item.minQty ? ` · min. ${item.minQty}` : ''}
+                      {item.categoryName ? ` · ${item.categoryName}` : ''}
                     </p>
                   </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => toggleActive.mutate(item)}
-                  >
-                    {item.active ? 'Deaktivovat' : 'Aktivovat'}
-                  </Button>
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <select
+                      className="h-8 rounded-md border border-black/15 bg-white px-2 text-xs"
+                      value={item.categoryId ?? ''}
+                      onChange={(e) =>
+                        setItemCategory.mutate({
+                          id: item.id,
+                          categoryId: e.target.value || null,
+                        })
+                      }
+                    >
+                      <option value="">Bez kategorie</option>
+                      {categories.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => toggleActive.mutate(item)}
+                    >
+                      {item.active ? 'Deaktivovat' : 'Aktivovat'}
+                    </Button>
+                  </div>
                 </li>
               ))}
-              {items.length === 0 && (
+              {filteredItems.length === 0 && (
                 <li className="px-3 py-4 text-sm text-black/50">Zatím žádné suroviny.</li>
               )}
             </ul>
@@ -290,18 +423,16 @@ export default function ProvozSkladPage() {
         <section className="space-y-4 border border-black/10 p-4">
           <h2 className="text-lg font-medium">Inventura po směně</h2>
           <p className="text-sm text-black/60">
-            Zadejte skutečné stavy. Rozdíl se zapíše jako korekce skladu.
+            Zadejte skutečné stavy podle kategorií. Rozdíl se zapíše jako korekce skladu.
           </p>
-          <div className="space-y-3">
-            {items
-              .filter((i) => i.active)
-              .map((item) => (
+          {groupedForCount.map((group) => (
+            <div key={group.title} className="space-y-2">
+              <h3 className="text-sm font-medium border-b border-black/10 pb-1">{group.title}</h3>
+              {group.items.map((item) => (
                 <div key={item.id} className="grid gap-2 sm:grid-cols-[1fr_120px] items-end">
-                  <div>
-                    <Label>
-                      {item.name} ({item.unit}) · systém {item.qtyOnHand}
-                    </Label>
-                  </div>
+                  <Label>
+                    {item.name} ({item.unit}) · systém {item.qtyOnHand}
+                  </Label>
                   <Input
                     value={countDraft[item.id] ?? item.qtyOnHand}
                     onChange={(e) =>
@@ -310,7 +441,8 @@ export default function ProvozSkladPage() {
                   />
                 </div>
               ))}
-          </div>
+            </div>
+          ))}
           <div>
             <Label>Poznámka</Label>
             <Input value={countNote} onChange={(e) => setCountNote(e.target.value)} />

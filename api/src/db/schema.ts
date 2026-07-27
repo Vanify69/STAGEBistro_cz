@@ -180,12 +180,23 @@ export const suppliers = pgTable('supplier', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const inventoryCategories = pgTable('inventory_category', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+  active: boolean('active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const inventoryItems = pgTable('inventory_item', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: text('name').notNull(),
   unit: text('unit').notNull().default('ks'),
   qtyOnHand: numeric('qty_on_hand', { precision: 18, scale: 6 }).notNull().default('0'),
   minQty: numeric('min_qty', { precision: 18, scale: 6 }),
+  categoryId: uuid('category_id').references(() => inventoryCategories.id, {
+    onDelete: 'set null',
+  }),
   active: boolean('active').notNull().default(true),
   sortOrder: integer('sort_order').notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -307,7 +318,15 @@ export const suppliersRelations = relations(suppliers, ({ many }) => ({
   orders: many(purchaseOrders),
 }));
 
-export const inventoryItemsRelations = relations(inventoryItems, ({ many }) => ({
+export const inventoryCategoriesRelations = relations(inventoryCategories, ({ many }) => ({
+  items: many(inventoryItems),
+}));
+
+export const inventoryItemsRelations = relations(inventoryItems, ({ one, many }) => ({
+  category: one(inventoryCategories, {
+    fields: [inventoryItems.categoryId],
+    references: [inventoryCategories.id],
+  }),
   supplierItems: many(supplierItems),
   movements: many(stockMovements),
   recipeLines: many(menuRecipeLines),

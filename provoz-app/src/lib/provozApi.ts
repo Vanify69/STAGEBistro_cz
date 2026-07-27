@@ -193,18 +193,32 @@ export async function setMenuItemVisibility(id: string, active: boolean): Promis
   });
 }
 
+export type InventoryCategory = {
+  id: string;
+  name: string;
+  sortOrder: number;
+  active: boolean;
+};
+
 export type InventoryItem = {
   id: string;
   name: string;
   unit: string;
   qtyOnHand: string;
   minQty: string | null;
+  categoryId: string | null;
+  categoryName: string | null;
   active: boolean;
 };
 
-export async function fetchInventoryItems(): Promise<InventoryItem[]> {
-  const res = await apiFetch<{ items: InventoryItem[] }>('/api/provoz/inventory-items');
-  return res.items;
+export async function fetchInventoryItems(): Promise<{
+  items: InventoryItem[];
+  categories: InventoryCategory[];
+}> {
+  const res = await apiFetch<{ items: InventoryItem[]; categories: InventoryCategory[] }>(
+    '/api/provoz/inventory-items'
+  );
+  return { items: res.items, categories: res.categories ?? [] };
 }
 
 export async function submitInventoryCount(input: {

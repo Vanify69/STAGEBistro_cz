@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { asc, desc, eq, inArray } from 'drizzle-orm';
 import { getDb } from '../db/index.js';
 import {
+  inventoryCategories,
   inventoryItems,
   menuCategories,
   menuItems,
@@ -16,6 +17,10 @@ import { auditAction, AUDIT_ACTIONS } from '../lib/auditLog.js';
 import { formatQty, parseQty } from '../lib/stockQty.js';
 import { computeSellableFromRecipe } from '../lib/storyous/applySaleDeduction.js';
 import { syncInventoryFromSupplierItems } from '../lib/syncInventoryFromSuppliers.js';
+import {
+  ensureDefaultInventoryCategories,
+  getOstatniCategoryId,
+} from '../lib/inventoryCategories.js';
 
 export const provozStockRouter = new Hono<{ Variables: { user: AuthUser } }>();
 
@@ -26,8 +31,15 @@ const inventoryItemSchema = z.object({
   unit: z.string().min(1).max(40),
   qtyOnHand: z.string().max(40).optional(),
   minQty: z.string().max(40).nullable().optional(),
+  categoryId: z.string().uuid().nullable().optional(),
   active: z.boolean().optional(),
   sortOrder: z.number().int().optional(),
+});
+
+const inventoryCategorySchema = z.object({
+  name: z.string().min(1).max(120),
+  sortOrder: z.number().int().optional(),
+  active: z.boolean().optional(),
 });
 
 const inventoryCountSchema = z.object({
@@ -40,6 +52,70 @@ const inventoryCountSchema = z.object({
       })
     )
     .min(1),
+});
+
+function mapInventoryItem(
+  row: typeof inventoryItems.$inferSelect,
+  categoryName: string | null
+) {
+  return {
+    ...row,
+    categoryName,
+    qtyOnHand: formatQty(parseQty(row.qtyOnHand) ?? 0),
+    minQty: row.minQty == null ? null : formatQty(parseQty(row.minQty) ?? 0),
+  };
+}
+
+provozStockRouter.get('/inventory-categories', permInventoryRead, async (c) => {
+  await ensureDefaultInventoryCategories();
+  const db = getDb();
+  const includeInactive = c.req.query('all') === '1';
+  const rows = includeInactive
+    ? await db
+        .select()
+        .from(inventoryCategories)
+        .orderBy(asc(inventoryCategories.sortOrder), asc(inventoryCategories.name))
+    : await db
+        .select()
+        .from(inventoryCategories)
+        .where(eq(inventoryCategories.active, true))
+        .orderBy(asc(inventoryCategories.sortOrder), asc(inventoryCategories.name));
+  return c.json({ categories: rows });
+});
+
+provozStockRouter.post('/inventory-categories', permProvozStock, async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const parsed = inventoryCategorySchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: 'Invalid body' }, 400);
+  const db = getDb();
+  const [row] = await db
+    .insert(inventoryCategories)
+    .values({
+      name: parsed.data.name.trim(),
+      sortOrder: parsed.data.sortOrder ?? 0,
+      active: parsed.data.active ?? true,
+    })
+    .returning();
+  return c.json({ category: row }, 201);
+});
+
+provozStockRouter.patch('/inventory-categories/:id', permProvozStock, async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json().catch(() => null);
+  const parsed = inventoryCategorySchema.partial().safeParse(body);
+  if (!parsed.success) return c.json({ error: 'Invalid body' }, 400);
+  const db = getDb();
+  const patch: Partial<typeof inventoryCategories.$inferInsert> = {};
+  if (parsed.data.name != null) patch.name = parsed.data.name.trim();
+  if (parsed.data.sortOrder != null) patch.sortOrder = parsed.data.sortOrder;
+  if (parsed.data.active != null) patch.active = parsed.data.active;
+  const [row] = await db
+    .update(inventoryCategories)
+    .set(patch)
+    .where(eq(inventoryCategories.id, id))
+    .returning();
+  if (!row) return c.json({ error: 'Not found' }, 404);
+  return c.json({ category: row });
 });
 
 provozStockRouter.post('/inventory-items/sync-from-suppliers', permProvozStock, async (c) => {
@@ -55,24 +131,30 @@ provozStockRouter.post('/inventory-items/sync-from-suppliers', permProvozStock, 
 });
 
 provozStockRouter.get('/inventory-items', permInventoryRead, async (c) => {
+  await ensureDefaultInventoryCategories();
   const db = getDb();
   const includeInactive = c.req.query('all') === '1';
-  const rows = includeInactive
-    ? await db
-        .select()
-        .from(inventoryItems)
-        .orderBy(asc(inventoryItems.sortOrder), asc(inventoryItems.name))
-    : await db
-        .select()
-        .from(inventoryItems)
-        .where(eq(inventoryItems.active, true))
-        .orderBy(asc(inventoryItems.sortOrder), asc(inventoryItems.name));
+  const [rows, cats] = await Promise.all([
+    includeInactive
+      ? db
+          .select()
+          .from(inventoryItems)
+          .orderBy(asc(inventoryItems.sortOrder), asc(inventoryItems.name))
+      : db
+          .select()
+          .from(inventoryItems)
+          .where(eq(inventoryItems.active, true))
+          .orderBy(asc(inventoryItems.sortOrder), asc(inventoryItems.name)),
+    db.select().from(inventoryCategories),
+  ]);
+  const catMap = new Map(cats.map((c) => [c.id, c.name]));
   return c.json({
-    items: rows.map((row) => ({
-      ...row,
-      qtyOnHand: formatQty(parseQty(row.qtyOnHand) ?? 0),
-      minQty: row.minQty == null ? null : formatQty(parseQty(row.minQty) ?? 0),
-    })),
+    items: rows.map((row) =>
+      mapInventoryItem(row, row.categoryId ? catMap.get(row.categoryId) ?? null : null)
+    ),
+    categories: cats
+      .filter((c) => includeInactive || c.active)
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, 'cs')),
   });
 });
 
@@ -90,6 +172,10 @@ provozStockRouter.post('/inventory-items', permProvozStock, async (c) => {
     return c.json({ error: 'Neplatné min. množství' }, 400);
   }
   const db = getDb();
+  const categoryId =
+    parsed.data.categoryId !== undefined
+      ? parsed.data.categoryId
+      : await getOstatniCategoryId();
   const [row] = await db
     .insert(inventoryItems)
     .values({
@@ -97,6 +183,7 @@ provozStockRouter.post('/inventory-items', permProvozStock, async (c) => {
       unit: parsed.data.unit.trim(),
       qtyOnHand: formatQty(qty),
       minQty: minQty == null ? null : formatQty(minQty),
+      categoryId,
       active: parsed.data.active ?? true,
       sortOrder: parsed.data.sortOrder ?? 0,
     })
@@ -133,6 +220,7 @@ provozStockRouter.patch('/inventory-items/:id', permProvozStock, async (c) => {
       patch.minQty = formatQty(minQty);
     }
   }
+  if (parsed.data.categoryId !== undefined) patch.categoryId = parsed.data.categoryId;
   if (parsed.data.active != null) patch.active = parsed.data.active;
   if (parsed.data.sortOrder != null) patch.sortOrder = parsed.data.sortOrder;
   const [row] = await db.update(inventoryItems).set(patch).where(eq(inventoryItems.id, id)).returning();

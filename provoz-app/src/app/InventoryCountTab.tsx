@@ -1,14 +1,24 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { fetchInventoryItems, submitInventoryCount, type InventoryItem } from "@/lib/provozApi";
+import {
+  fetchInventoryItems,
+  submitInventoryCount,
+  type InventoryCategory,
+  type InventoryItem,
+} from "@/lib/provozApi";
 
 const BRAND: React.CSSProperties = { fontFamily: "'Montserrat', sans-serif" };
 const BODY: React.CSSProperties = { fontFamily: "'DM Sans', sans-serif" };
 
+type ChipId = "all" | string;
+
 export function InventoryCountTab() {
   const [items, setItems] = useState<InventoryItem[]>([]);
+  const [categories, setCategories] = useState<InventoryCategory[]>([]);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [note, setNote] = useState("");
+  const [search, setSearch] = useState("");
+  const [chip, setChip] = useState<ChipId>("all");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -18,10 +28,11 @@ export function InventoryCountTab() {
     setLoading(true);
     setError("");
     try {
-      const rows = await fetchInventoryItems();
-      setItems(rows);
+      const res = await fetchInventoryItems();
+      setItems(res.items);
+      setCategories(res.categories);
       const next: Record<string, string> = {};
-      for (const r of rows) next[r.id] = r.qtyOnHand;
+      for (const r of res.items) next[r.id] = r.qtyOnHand;
       setDraft(next);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Načtení selhalo");
@@ -34,17 +45,71 @@ export function InventoryCountTab() {
     void reload();
   }, [reload]);
 
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return items.filter((item) => {
+      if (chip !== "all") {
+        if (chip === "none") {
+          if (item.categoryId) return false;
+        } else if (item.categoryId !== chip) {
+          return false;
+        }
+      }
+      if (!q) return true;
+      return (
+        item.name.toLowerCase().includes(q) ||
+        (item.categoryName ?? "").toLowerCase().includes(q)
+      );
+    });
+  }, [items, chip, search]);
+
+  const groups = useMemo(() => {
+    const map = new Map<string, { title: string; sort: number; items: InventoryItem[] }>();
+    for (const item of filtered) {
+      const key = item.categoryId ?? "none";
+      const title = item.categoryName ?? "Bez kategorie";
+      const sort = categories.find((c) => c.id === item.categoryId)?.sortOrder ?? 999;
+      const bucket = map.get(key) ?? { title, sort, items: [] };
+      bucket.items.push(item);
+      map.set(key, bucket);
+    }
+    return [...map.values()].sort((a, b) => a.sort - b.sort || a.title.localeCompare(b.title, "cs"));
+  }, [filtered, categories]);
+
+  const chips: { id: ChipId; label: string }[] = useMemo(
+    () => [
+      { id: "all", label: "Vše" },
+      ...categories.map((c) => ({ id: c.id, label: c.name })),
+      { id: "none", label: "Bez kategorie" },
+    ],
+    [categories]
+  );
+
   async function save() {
     setSaving(true);
     setError("");
     setDone(false);
     try {
-      await submitInventoryCount({
-        note: note.trim() || null,
-        lines: items.map((i) => ({
+      const changed = items
+        .map((i) => ({
           inventoryItemId: i.id,
           countedQty: (draft[i.id] ?? i.qtyOnHand).trim(),
-        })),
+          prev: i.qtyOnHand,
+        }))
+        .filter((l) => l.countedQty !== "" && l.countedQty !== l.prev)
+        .map(({ inventoryItemId, countedQty }) => ({ inventoryItemId, countedQty }));
+
+      const lines =
+        changed.length > 0
+          ? changed
+          : items.map((i) => ({
+              inventoryItemId: i.id,
+              countedQty: (draft[i.id] ?? i.qtyOnHand).trim(),
+            }));
+
+      await submitInventoryCount({
+        note: note.trim() || null,
+        lines,
       });
       setDone(true);
       await reload();
@@ -68,27 +133,69 @@ export function InventoryCountTab() {
         </div>
       ) : (
         <>
-          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-            <p className="text-xs text-muted-foreground">
-              Zadejte skutečné stavy po směně. Rozdíl se zapíše do skladu.
+          <div className="shrink-0 border-b border-border px-4 py-3 space-y-3 bg-background">
+            <input
+              className="w-full h-11 bg-secondary px-3 text-sm border border-border focus:outline-none focus:border-foreground/30"
+              placeholder="Hledat surovinu…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+              {chips.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => setChip(c.id)}
+                  className={`shrink-0 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide border ${
+                    chip === c.id
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "border-border text-muted-foreground"
+                  }`}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Zobrazeno {filtered.length} / {items.length}
             </p>
-            {items.map((item) => (
-              <div key={item.id} className="space-y-1">
-                <label className="text-xs text-muted-foreground">
-                  {item.name} ({item.unit}) · systém {item.qtyOnHand}
-                </label>
-                <input
-                  className="w-full h-11 bg-secondary px-3 text-sm border border-border focus:outline-none focus:border-foreground/30"
-                  value={draft[item.id] ?? ""}
-                  onChange={(e) => setDraft((d) => ({ ...d, [item.id]: e.target.value }))}
-                  inputMode="decimal"
-                />
-              </div>
+          </div>
+          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
+            {groups.map((group) => (
+              <section key={group.title} className="space-y-3">
+                <h3
+                  style={{ ...BRAND, letterSpacing: "0.1em" }}
+                  className="text-[11px] font-bold uppercase text-muted-foreground border-b border-border pb-1"
+                >
+                  {group.title} · {group.items.length}
+                </h3>
+                {group.items.map((item) => {
+                  const changed = (draft[item.id] ?? "") !== item.qtyOnHand;
+                  return (
+                    <div key={item.id} className="space-y-1">
+                      <label className="text-xs text-muted-foreground">
+                        {item.name} ({item.unit}) · systém {item.qtyOnHand}
+                        {changed ? " · změněno" : ""}
+                      </label>
+                      <input
+                        className={`w-full h-11 bg-secondary px-3 text-sm border focus:outline-none focus:border-foreground/30 ${
+                          changed ? "border-foreground/40" : "border-border"
+                        }`}
+                        value={draft[item.id] ?? ""}
+                        onChange={(e) =>
+                          setDraft((d) => ({ ...d, [item.id]: e.target.value }))
+                        }
+                        inputMode="decimal"
+                      />
+                    </div>
+                  );
+                })}
+              </section>
             ))}
-            {items.length === 0 && (
-              <p className="text-sm text-muted-foreground">Zatím žádné suroviny na skladu.</p>
+            {filtered.length === 0 && (
+              <p className="text-sm text-muted-foreground">Nic nenalezeno.</p>
             )}
-            <div className="space-y-1">
+            <div className="space-y-1 pt-2">
               <label className="text-xs text-muted-foreground">Poznámka</label>
               <input
                 className="w-full h-11 bg-secondary px-3 text-sm border border-border focus:outline-none"
