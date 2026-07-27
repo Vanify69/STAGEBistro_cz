@@ -151,55 +151,77 @@ export function InventoryCountTab() {
                 </button>
               ))}
             </div>
-            <p className="text-[11px] text-muted-foreground">
-              Zobrazeno {filtered.length} / {items.length}
+            <p className="text-[10px] text-muted-foreground flex justify-between gap-2">
+              <span>Zobrazeno {filtered.length} / {items.length}</span>
+              <span className="tabular-nums">systém → spočítáno</span>
             </p>
           </div>
-          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
+          <div className="flex-1 overflow-y-auto">
             {groups.map((group) => (
-              <section key={group.title} className="space-y-3">
+              <section key={group.title}>
                 <h3
                   style={{ ...BRAND, letterSpacing: "0.1em" }}
-                  className="text-[11px] font-bold uppercase text-muted-foreground border-b border-border pb-1"
+                  className="sticky top-0 z-10 px-4 py-2 text-[10px] font-bold uppercase text-muted-foreground bg-background border-b border-border"
                 >
                   {group.title} · {group.items.length}
                 </h3>
-                {group.items.map((item) => {
-                  const changed = (draft[item.id] ?? "") !== item.qtyOnHand;
-                  return (
-                    <div key={item.id} className="space-y-1">
-                      <label className="text-xs text-muted-foreground">
-                        {item.name} ({item.unit}) · systém {item.qtyOnHand}
-                        {changed ? " · změněno" : ""}
-                      </label>
-                      <input
-                        className={`w-full h-11 bg-secondary px-3 text-sm border focus:outline-none focus:border-foreground/30 ${
-                          changed ? "border-foreground/40" : "border-border"
+                <ul className="divide-y divide-border">
+                  {group.items.map((item) => {
+                    const changed = (draft[item.id] ?? "") !== item.qtyOnHand;
+                    return (
+                      <li
+                        key={item.id}
+                        className={`flex items-center gap-2 px-4 py-2 ${
+                          changed ? "bg-secondary/40" : ""
                         }`}
-                        value={draft[item.id] ?? ""}
-                        onChange={(e) =>
-                          setDraft((d) => ({ ...d, [item.id]: e.target.value }))
-                        }
-                        inputMode="decimal"
-                      />
-                    </div>
-                  );
-                })}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[13px] leading-tight text-foreground truncate">
+                            {item.name}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
+                            {item.unit}
+                            {changed ? " · změněno" : ""}
+                          </p>
+                        </div>
+                        <span
+                          className="shrink-0 w-12 text-right text-[11px] tabular-nums text-muted-foreground"
+                          title="Systém"
+                        >
+                          {item.qtyOnHand}
+                        </span>
+                        <input
+                          aria-label={`${item.name} spočítáno`}
+                          className={`shrink-0 w-16 h-9 bg-secondary px-1.5 text-center text-sm tabular-nums border focus:outline-none focus:border-foreground/40 ${
+                            changed ? "border-foreground/50 text-foreground" : "border-border"
+                          }`}
+                          value={draft[item.id] ?? ""}
+                          onChange={(e) =>
+                            setDraft((d) => ({ ...d, [item.id]: e.target.value }))
+                          }
+                          inputMode="decimal"
+                        />
+                      </li>
+                    );
+                  })}
+                </ul>
               </section>
             ))}
             {filtered.length === 0 && (
-              <p className="text-sm text-muted-foreground">Nic nenalezeno.</p>
+              <p className="px-4 py-8 text-sm text-muted-foreground">Nic nenalezeno.</p>
             )}
-            <div className="space-y-1 pt-2">
-              <label className="text-xs text-muted-foreground">Poznámka</label>
+            <div className="px-4 py-4 space-y-1 border-t border-border">
+              <label className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                Poznámka
+              </label>
               <input
-                className="w-full h-11 bg-secondary px-3 text-sm border border-border focus:outline-none"
+                className="w-full h-9 bg-secondary px-3 text-sm border border-border focus:outline-none"
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
               />
             </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            {done && <p className="text-sm text-foreground">Inventura uložena.</p>}
+            {error && <p className="px-4 pb-2 text-sm text-destructive">{error}</p>}
+            {done && <p className="px-4 pb-2 text-sm text-foreground">Inventura uložena.</p>}
           </div>
           <div className="px-4 pb-6 pt-3 border-t border-border shrink-0">
             <button
