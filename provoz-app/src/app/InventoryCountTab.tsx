@@ -122,11 +122,6 @@ export function InventoryCountTab() {
 
   return (
     <div className="flex flex-col h-full" style={BODY}>
-      <div className="flex items-center h-14 border-b border-border px-4 shrink-0">
-        <p style={{ ...BRAND, letterSpacing: "0.08em" }} className="text-sm font-bold uppercase">
-          Inventura
-        </p>
-      </div>
       {loading ? (
         <div className="flex-1 flex items-center justify-center">
           <Loader2 className="animate-spin text-muted-foreground" size={24} />

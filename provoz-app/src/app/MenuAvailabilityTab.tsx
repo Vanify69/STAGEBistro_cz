@@ -6,7 +6,6 @@ import {
   type MenuAvailabilityItem,
 } from "@/lib/provozApi";
 
-const BRAND: React.CSSProperties = { fontFamily: "'Montserrat', sans-serif" };
 const BODY: React.CSSProperties = { fontFamily: "'DM Sans', sans-serif" };
 
 export function MenuAvailabilityTab() {
@@ -48,11 +47,6 @@ export function MenuAvailabilityTab() {
 
   return (
     <div className="flex flex-col h-full" style={BODY}>
-      <div className="flex items-center h-14 border-b border-border px-4 shrink-0">
-        <p style={{ ...BRAND, letterSpacing: "0.08em" }} className="text-sm font-bold uppercase">
-          Menu
-        </p>
-      </div>
       {loading ? (
         <div className="flex-1 flex items-center justify-center">
           <Loader2 className="animate-spin text-muted-foreground" size={24} />

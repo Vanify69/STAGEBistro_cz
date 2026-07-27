@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarDays, Check, ChevronLeft, ChevronRight, Loader2, X } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Loader2, X } from 'lucide-react';
 import {
   fetchActiveWorkers,
   fetchMonthCalendar,
@@ -211,14 +211,7 @@ export function ShiftsTab({ permissions }: Props) {
 
   return (
     <div className="flex-1 overflow-y-auto" style={BODY}>
-      <div className="px-4 pt-4 pb-2 flex items-center gap-2">
-        <CalendarDays size={18} className="text-muted-foreground" />
-        <h2 style={BRAND} className="text-sm font-semibold uppercase tracking-[0.14em]">
-          Plán směn
-        </h2>
-      </div>
-
-      <div className="px-4 pb-3 flex items-center justify-between gap-2">
+      <div className="px-4 pt-4 pb-2 flex items-center justify-between gap-2">
         <button
           type="button"
           className="p-2 text-muted-foreground active:text-foreground"

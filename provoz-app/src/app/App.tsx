@@ -20,6 +20,7 @@ import {
   User,
   UtensilsCrossed,
   ClipboardList,
+  Menu as MenuIcon,
 } from "lucide-react";
 import {
   createOrder,
@@ -72,6 +73,15 @@ const BODY:  React.CSSProperties = { fontFamily: "'DM Sans', sans-serif" };
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Tab = "objednavky" | "uctenky" | "menu" | "inventura" | "smeny";
+
+const TAB_TITLES: Record<Tab, string> = {
+  objednavky: "Objednávky",
+  uctenky: "Účtenky",
+  menu: "Menu",
+  inventura: "Inventura",
+  smeny: "Směny",
+};
+
 type Supplier = ApiSupplier;
 type SupplierItem = ApiSupplierItem;
 
@@ -183,34 +193,169 @@ function ErrorBanner({ msg }: { msg: string }) {
   );
 }
 
-// ─── User strip (shown when logged in) ────────────────────────────────────────
+// ─── App header + more menu ────────────────────────────────────────────────────
 
-function UserStrip({ userEmail, onLogout }: { userEmail: string; onLogout: () => void }) {
+function AppHeader({
+  title,
+  menuOpen,
+  onMenuOpenChange,
+  userEmail,
+  activeTab,
+  onNavigate,
+  onLogout,
+  showStock,
+  showShifts,
+}: {
+  title: string;
+  menuOpen: boolean;
+  onMenuOpenChange: (open: boolean) => void;
+  userEmail: string;
+  activeTab: Tab;
+  onNavigate: (t: Tab) => void;
+  onLogout: () => void;
+  showStock: boolean;
+  showShifts: boolean;
+}) {
   const [loggingOut, setLoggingOut] = useState(false);
+
+  const moreItems = [
+    ...(showStock ? [{ id: "uctenky" as Tab, label: "Účtenky", Icon: Camera }] : []),
+    ...(showStock ? [{ id: "menu" as Tab, label: "Menu", Icon: UtensilsCrossed }] : []),
+    ...(showShifts ? [{ id: "smeny" as Tab, label: "Směny", Icon: CalendarDays }] : []),
+  ];
 
   async function handleLogout() {
     setLoggingOut(true);
-    try { await apiLogoutRequest(); } finally { onLogout(); }
+    try {
+      await apiLogoutRequest();
+    } finally {
+      onMenuOpenChange(false);
+      onLogout();
+    }
   }
 
+  function go(tab: Tab) {
+    onNavigate(tab);
+    onMenuOpenChange(false);
+  }
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onMenuOpenChange(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [menuOpen, onMenuOpenChange]);
+
   return (
-    <div className="flex items-center justify-between px-4 h-9 border-b border-border bg-muted shrink-0">
-      <div className="flex items-center gap-2 min-w-0">
-        <User size={11} className="text-muted-foreground shrink-0" />
-        <span style={BODY} className="text-[11px] text-muted-foreground truncate">{userEmail}</span>
-      </div>
-      <button
-        onClick={handleLogout}
-        disabled={loggingOut}
-        className="flex items-center gap-1.5 text-muted-foreground active:text-foreground transition-colors disabled:opacity-40 ml-3 shrink-0"
+    <>
+      <header
+        className="flex items-center gap-3 px-3 border-b border-border bg-background shrink-0 z-20"
+        style={{
+          paddingTop: "env(safe-area-inset-top, 0px)",
+          height: "calc(3.5rem + env(safe-area-inset-top, 0px))",
+        }}
       >
-        {loggingOut
-          ? <Loader2 size={13} className="animate-spin" />
-          : <LogOut size={13} />
-        }
-        <span style={{ ...BRAND, letterSpacing: "0.12em" }} className="text-[9px] uppercase font-semibold">Odhlásit</span>
-      </button>
-    </div>
+        <img src="/favicon.png" alt="" width={28} height={28} className="size-7 shrink-0 rounded-sm" />
+        <p
+          style={{ ...BRAND, letterSpacing: "0.1em" }}
+          className="flex-1 min-w-0 text-sm font-bold uppercase truncate"
+        >
+          {title}
+        </p>
+        <button
+          type="button"
+          onClick={() => onMenuOpenChange(true)}
+          className="shrink-0 p-2 -mr-1 text-foreground active:opacity-60"
+          aria-label="Menu"
+        >
+          <MenuIcon size={22} strokeWidth={1.75} />
+        </button>
+      </header>
+
+      {menuOpen && (
+        <div className="fixed inset-0 z-50 flex justify-center" role="presentation">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/50"
+            aria-label="Zavřít menu"
+            onClick={() => onMenuOpenChange(false)}
+          />
+          <div className="relative w-full max-w-[430px] h-full pointer-events-none flex">
+            <aside
+              role="dialog"
+              aria-modal="true"
+              aria-label="Menu"
+              className="pointer-events-auto w-[min(100%,20rem)] h-full bg-background border-r border-border flex flex-col shadow-xl animate-in slide-in-from-left duration-200"
+            >
+              <div className="border-b border-border px-4 py-5 shrink-0 relative">
+                <button
+                  type="button"
+                  onClick={() => onMenuOpenChange(false)}
+                  className="absolute top-4 right-3 p-1 text-muted-foreground active:text-foreground"
+                  aria-label="Zavřít"
+                >
+                  <X size={18} />
+                </button>
+                <div className="flex items-center gap-3 pr-8">
+                  <div className="size-10 rounded-full bg-secondary border border-border flex items-center justify-center shrink-0">
+                    <User size={18} className="text-muted-foreground" />
+                  </div>
+                  <div className="min-w-0">
+                    <p style={{ ...BRAND, letterSpacing: "0.12em" }} className="text-[10px] font-semibold uppercase text-muted-foreground">
+                      Účet
+                    </p>
+                    <p style={BODY} className="text-sm text-foreground truncate mt-0.5">
+                      {userEmail}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <nav className="flex flex-col py-2 flex-1 overflow-y-auto">
+                {moreItems.map(({ id, label, Icon }) => {
+                  const active = activeTab === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => go(id)}
+                      className={`flex items-center gap-3 px-4 py-3.5 text-left transition-colors ${
+                        active ? "bg-secondary text-foreground" : "text-foreground active:bg-secondary/60"
+                      }`}
+                    >
+                      <Icon size={18} strokeWidth={active ? 2 : 1.5} className="shrink-0" />
+                      <span style={{ ...BRAND, letterSpacing: "0.1em" }} className="text-[12px] font-semibold uppercase">
+                        {label}
+                      </span>
+                      {active && <span className="ml-auto size-1.5 rounded-full bg-foreground" />}
+                    </button>
+                  );
+                })}
+              </nav>
+
+              <div
+                className="border-t border-border px-4 pt-2 shrink-0"
+                style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom, 0px))" }}
+              >
+                <button
+                  type="button"
+                  onClick={() => void handleLogout()}
+                  disabled={loggingOut}
+                  className="w-full flex items-center gap-3 py-3 text-muted-foreground active:text-foreground disabled:opacity-40"
+                >
+                  {loggingOut ? <Loader2 size={18} className="animate-spin" /> : <LogOut size={18} />}
+                  <span style={{ ...BRAND, letterSpacing: "0.12em" }} className="text-[11px] font-semibold uppercase">
+                    Odhlásit
+                  </span>
+                </button>
+              </div>
+            </aside>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -773,11 +918,6 @@ function OrdersTab() {
   if (phase === "hub") {
     return (
       <div className="flex flex-col h-full">
-        <div className="flex items-center h-14 border-b border-border px-4 shrink-0">
-          <p style={{ ...BRAND, letterSpacing: "0.08em" }} className="text-sm font-bold uppercase">
-            Objednávky
-          </p>
-        </div>
         <div className="flex-1 p-4 space-y-3">
           <button
             type="button"
@@ -1010,7 +1150,9 @@ function ReceiptsTab() {
 
   return (
     <div className="flex flex-col h-full">
-      <TopBar title="Účtenky" onBack={phase !== "capture" ? reset : undefined} />
+      {phase !== "capture" && (
+        <TopBar title="Účtenky" onBack={reset} />
+      )}
 
       {/* CAPTURE */}
       {phase === "capture" && (
@@ -1167,43 +1309,46 @@ function ReceiptsTab() {
 function TabBar({
   active,
   onChange,
-  showShifts,
   showStock,
 }: {
   active: Tab;
   onChange: (t: Tab) => void;
-  showShifts: boolean;
   showStock: boolean;
 }) {
-  const tabs = [
-    { id: "objednavky" as Tab, label: "Objednávky", Icon: ShoppingCart },
-    { id: "uctenky" as Tab, label: "Účtenky", Icon: Camera },
-    ...(showStock
-      ? [
-          { id: "menu" as Tab, label: "Menu", Icon: UtensilsCrossed },
-          { id: "inventura" as Tab, label: "Inventura", Icon: ClipboardList },
-        ]
-      : []),
-    ...(showShifts
-      ? [{ id: "smeny" as Tab, label: "Směny", Icon: CalendarDays }]
-      : []),
-  ];
+  const tabs = showStock
+    ? [
+        { id: "objednavky" as Tab, label: "Objednávky", Icon: ShoppingCart },
+        { id: "inventura" as Tab, label: "Inventura", Icon: ClipboardList },
+      ]
+    : [
+        { id: "objednavky" as Tab, label: "Objednávky", Icon: ShoppingCart },
+        { id: "uctenky" as Tab, label: "Účtenky", Icon: Camera },
+      ];
 
   return (
-    <div className="flex border-t border-border shrink-0 bg-background" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
-      {tabs.map(({ id, label, Icon }) => (
-        <button
-          key={id}
-          onClick={() => onChange(id)}
-          className={`flex-1 flex flex-col items-center gap-1.5 py-3 transition-colors relative ${active === id ? "text-foreground" : "text-muted-foreground/40 active:text-muted-foreground"}`}
-        >
-          {active === id && <span className="absolute top-0 inset-x-8 h-px bg-foreground" />}
-          <Icon size={20} strokeWidth={active === id ? 2 : 1.5} />
-          <span style={{ ...BRAND, letterSpacing: "0.16em" }} className="text-[9px] font-semibold uppercase">
-            {label}
-          </span>
-        </button>
-      ))}
+    <div
+      className="flex border-t border-border shrink-0 bg-background z-20"
+      style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+    >
+      {tabs.map(({ id, label, Icon }) => {
+        const isActive = active === id;
+        return (
+          <button
+            key={id}
+            type="button"
+            onClick={() => onChange(id)}
+            className={`flex-1 flex flex-col items-center gap-1.5 py-3 transition-colors relative ${
+              isActive ? "text-foreground" : "text-muted-foreground/40 active:text-muted-foreground"
+            }`}
+          >
+            {isActive && <span className="absolute top-0 inset-x-8 h-px bg-foreground" />}
+            <Icon size={20} strokeWidth={isActive ? 2 : 1.5} />
+            <span style={{ ...BRAND, letterSpacing: "0.16em" }} className="text-[9px] font-semibold uppercase">
+              {label}
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -1214,6 +1359,7 @@ export default function App() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [bootLoading, setBootLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("objednavky");
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const showShifts = hasPermission(user?.permissions, "staff.shifts");
   const showStock = hasPermission(user?.permissions, "provoz.stock");
@@ -1245,6 +1391,7 @@ export default function App() {
   function handleLogout() {
     setUser(null);
     setTab("objednavky");
+    setMenuOpen(false);
   }
 
   return (
@@ -1264,7 +1411,17 @@ export default function App() {
           </div>
         ) : (
           <>
-            <UserStrip userEmail={user.email} onLogout={handleLogout} />
+            <AppHeader
+              title={TAB_TITLES[tab]}
+              menuOpen={menuOpen}
+              onMenuOpenChange={setMenuOpen}
+              userEmail={user.email}
+              activeTab={tab}
+              onNavigate={setTab}
+              onLogout={handleLogout}
+              showStock={showStock}
+              showShifts={showShifts}
+            />
             <InstallAppBanner />
             <div className="flex-1 overflow-hidden flex flex-col">
               {tab === "objednavky" && <OrdersTab />}
@@ -1273,12 +1430,7 @@ export default function App() {
               {tab === "inventura" && <InventoryCountTab />}
               {tab === "smeny" && <ShiftsTab permissions={user.permissions} />}
             </div>
-            <TabBar
-              active={tab}
-              onChange={setTab}
-              showShifts={showShifts}
-              showStock={showStock}
-            />
+            <TabBar active={tab} onChange={setTab} showStock={showStock} />
           </>
         )}
       </div>
