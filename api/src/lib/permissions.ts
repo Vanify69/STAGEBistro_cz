@@ -14,6 +14,7 @@ export const PERMISSIONS = [
   'provoz.receipts',
   'provoz.orders',
   'provoz.orders.send',
+  'provoz.stock',
   'accounting.read',
   'accounting.book',
   'accounting.contracts',
@@ -37,6 +38,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   'provoz.receipts': 'Provoz — účtenky (nahrání)',
   'provoz.orders': 'Provoz — dodavatelé a šablony objednávek',
   'provoz.orders.send': 'Provoz — odesílání objednávek',
+  'provoz.stock': 'Provoz — sklad, příjem, inventura, dostupnost menu',
   'accounting.read': 'Účetní — přehled',
   'accounting.book': 'Účetní — zaúčtování',
   'accounting.contracts': 'Účetní — smlouvy DPC',
@@ -56,6 +58,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<UserRole, readonly Permission[]> 
     'provoz.receipts',
     'provoz.orders',
     'provoz.orders.send',
+    'provoz.stock',
   ],
   ucetni: ['accounting.read', 'accounting.book', 'accounting.contracts'],
 };
@@ -107,6 +110,7 @@ export const PROVOZ_PERMISSIONS: readonly Permission[] = [
   'provoz.receipts',
   'provoz.orders',
   'provoz.orders.send',
+  'provoz.stock',
 ];
 
 export const ACCOUNTING_PERMISSIONS: readonly Permission[] = [

@@ -114,6 +114,52 @@ export function MenuAdminPanel() {
   );
   const [itemForm, setItemForm] = useState<ItemFormState>(emptyItem(''));
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'category' | 'item'; id: string; label: string } | null>(null);
+  const [recipeItem, setRecipeItem] = useState<AdminMenuItem | null>(null);
+  const [recipeLines, setRecipeLines] = useState<
+    { inventoryItemId: string; quantityPerPortion: string }[]
+  >([]);
+
+  const inventoryQuery = useQuery({
+    queryKey: ['provoz', 'inventory-items'],
+    queryFn: () =>
+      apiFetch<{ items: { id: string; name: string; unit: string }[] }>(
+        '/api/provoz/inventory-items'
+      ),
+    enabled: recipeItem != null,
+  });
+
+  const recipeQuery = useQuery({
+    queryKey: ['admin', 'menu-recipe', recipeItem?.id],
+    queryFn: () =>
+      apiFetch<{
+        lines: { inventoryItemId: string; quantityPerPortion: string }[];
+      }>(`/api/admin/menu/items/${recipeItem!.id}/recipe`),
+    enabled: recipeItem != null,
+  });
+
+  useEffect(() => {
+    if (!recipeQuery.data) return;
+    setRecipeLines(
+      recipeQuery.data.lines.map((l) => ({
+        inventoryItemId: l.inventoryItemId,
+        quantityPerPortion: l.quantityPerPortion,
+      }))
+    );
+  }, [recipeQuery.data]);
+
+  const saveRecipe = useMutation({
+    mutationFn: () =>
+      apiFetch(`/api/admin/menu/items/${recipeItem!.id}/recipe`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          lines: recipeLines.filter((l) => l.inventoryItemId && l.quantityPerPortion.trim()),
+        }),
+      }),
+    onSuccess: () => {
+      setRecipeItem(null);
+      void qc.invalidateQueries({ queryKey: ['admin', 'menu-recipe'] });
+    },
+  });
 
   const saveHero = useMutation({
     mutationFn: async (url: string) =>
@@ -179,6 +225,7 @@ export function MenuAdminPanel() {
         allergenCodes: itemForm.allergenCodes.trim() || null,
         imageUrl: itemForm.imageUrl.trim() || null,
         active: itemForm.active,
+        storyousProductId: itemForm.storyousProductId.trim() || null,
       };
       if (itemDialog?.mode === 'create') {
         const catItems = itemsByCategory.get(itemForm.categoryId) ?? [];
@@ -280,6 +327,7 @@ export function MenuAdminPanel() {
       allergenCodes: item.allergenCodes ?? '',
       imageUrl: item.imageUrl ?? '',
       active: item.active,
+      storyousProductId: item.storyousProductId ?? '',
     });
     setItemDialog({ mode: 'edit', id: item.id });
   };
@@ -457,6 +505,15 @@ export function MenuAdminPanel() {
                                 type="button"
                                 variant="ghost"
                                 size="sm"
+                                title="Receptura"
+                                onClick={() => setRecipeItem(item)}
+                              >
+                                R
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
                                 onClick={() =>
                                   setDeleteTarget({ type: 'item', id: item.id, label: item.nameCz })
                                 }
@@ -606,6 +663,14 @@ export function MenuAdminPanel() {
               <Switch checked={itemForm.active} onCheckedChange={(active) => setItemForm((s) => ({ ...s, active }))} />
               <Label>Zobrazovat na webu</Label>
             </div>
+            <div>
+              <Label>Storyous product ID (později)</Label>
+              <Input
+                value={itemForm.storyousProductId}
+                onChange={(e) => setItemForm((s) => ({ ...s, storyousProductId: e.target.value }))}
+                placeholder="volitelné"
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setItemDialog(null)}>
@@ -623,6 +688,80 @@ export function MenuAdminPanel() {
               onClick={() => saveItem.mutate()}
             >
               Uložit
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={recipeItem !== null} onOpenChange={(o) => !o && setRecipeItem(null)}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Receptura — {recipeItem?.nameCz}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-black/60">Množství surovin na 1 porci.</p>
+          <div className="space-y-3 py-2">
+            {recipeLines.map((line, idx) => (
+              <div key={idx} className="grid gap-2 sm:grid-cols-[1fr_100px_auto]">
+                <Select
+                  value={line.inventoryItemId || undefined}
+                  onValueChange={(inventoryItemId) =>
+                    setRecipeLines((rows) =>
+                      rows.map((r, i) => (i === idx ? { ...r, inventoryItemId } : r))
+                    )
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Surovina" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(inventoryQuery.data?.items ?? []).map((inv) => (
+                      <SelectItem key={inv.id} value={inv.id}>
+                        {inv.name} ({inv.unit})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  value={line.quantityPerPortion}
+                  onChange={(e) =>
+                    setRecipeLines((rows) =>
+                      rows.map((r, i) =>
+                        i === idx ? { ...r, quantityPerPortion: e.target.value } : r
+                      )
+                    )
+                  }
+                  placeholder="Množství"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setRecipeLines((rows) => rows.filter((_, i) => i !== idx))}
+                >
+                  ×
+                </Button>
+              </div>
+            ))}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                setRecipeLines((rows) => [...rows, { inventoryItemId: '', quantityPerPortion: '' }])
+              }
+            >
+              Přidat surovinu
+            </Button>
+            {saveRecipe.isError && (
+              <p className="text-sm text-red-600">{(saveRecipe.error as Error).message}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setRecipeItem(null)}>
+              Zrušit
+            </Button>
+            <Button type="button" disabled={saveRecipe.isPending} onClick={() => saveRecipe.mutate()}>
+              Uložit recepturu
             </Button>
           </DialogFooter>
         </DialogContent>

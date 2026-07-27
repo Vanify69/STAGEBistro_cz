@@ -12,6 +12,7 @@ export type Permission =
   | 'provoz.receipts'
   | 'provoz.orders'
   | 'provoz.orders.send'
+  | 'provoz.stock'
   | 'accounting.read'
   | 'accounting.book'
   | 'accounting.contracts'
@@ -36,7 +37,13 @@ const STAFF: Permission[] = [
   'staff.attendance',
   'staff.payments',
 ];
-const PROVOZ: Permission[] = ['provoz.sales', 'provoz.receipts', 'provoz.orders', 'provoz.orders.send'];
+const PROVOZ: Permission[] = [
+  'provoz.sales',
+  'provoz.receipts',
+  'provoz.orders',
+  'provoz.orders.send',
+  'provoz.stock',
+];
 const ACCOUNTING: Permission[] = ['accounting.read', 'accounting.book', 'accounting.contracts'];
 
 export function hasPermission(permissions: readonly string[], p: Permission): boolean {

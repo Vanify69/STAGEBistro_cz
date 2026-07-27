@@ -27,6 +27,14 @@ type SupplierItem = {
   note: string | null;
   active: boolean;
   sortOrder: number;
+  inventoryItemId: string | null;
+};
+
+type InventoryItem = {
+  id: string;
+  name: string;
+  unit: string;
+  active: boolean;
 };
 
 type OrderTemplate = {
@@ -79,10 +87,12 @@ export default function ProvozDodavatelePage() {
   const [itemName, setItemName] = useState('');
   const [itemUnit, setItemUnit] = useState('ks');
   const [itemDefaultQty, setItemDefaultQty] = useState('');
+  const [itemInventoryId, setItemInventoryId] = useState('');
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editUnit, setEditUnit] = useState('ks');
   const [editDefaultQty, setEditDefaultQty] = useState('');
+  const [editInventoryId, setEditInventoryId] = useState('');
 
   const [subjectTemplate, setSubjectTemplate] = useState('');
   const [bodyTemplate, setBodyTemplate] = useState('');
@@ -99,6 +109,12 @@ export default function ProvozDodavatelePage() {
     queryFn: () =>
       apiFetch<{ items: SupplierItem[] }>(`/api/provoz/suppliers/${selectedId}/items?all=1`),
     enabled: allowed && can('provoz.orders') && Boolean(selectedId),
+  });
+
+  const inventoryQuery = useQuery({
+    queryKey: ['provoz', 'inventory-items'],
+    queryFn: () => apiFetch<{ items: InventoryItem[] }>('/api/provoz/inventory-items'),
+    enabled: allowed && can('provoz.stock'),
   });
 
   const templateQuery = useQuery({
@@ -167,11 +183,13 @@ export default function ProvozDodavatelePage() {
           name: itemName,
           unit: itemUnit,
           defaultQty: itemDefaultQty || null,
+          inventoryItemId: itemInventoryId || null,
         }),
       }),
     onSuccess: () => {
       setItemName('');
       setItemDefaultQty('');
+      setItemInventoryId('');
       qc.invalidateQueries({ queryKey: ['provoz', 'supplier-items', selectedId] });
     },
   });
@@ -186,13 +204,20 @@ export default function ProvozDodavatelePage() {
   });
 
   const updateItem = useMutation({
-    mutationFn: (payload: { id: string; name: string; unit: string; defaultQty: string }) =>
+    mutationFn: (payload: {
+      id: string;
+      name: string;
+      unit: string;
+      defaultQty: string;
+      inventoryItemId: string | null;
+    }) =>
       apiFetch(`/api/provoz/supplier-items/${payload.id}`, {
         method: 'PATCH',
         body: JSON.stringify({
           name: payload.name,
           unit: payload.unit,
           defaultQty: payload.defaultQty || null,
+          inventoryItemId: payload.inventoryItemId,
         }),
       }),
     onSuccess: () => {
@@ -215,7 +240,12 @@ export default function ProvozDodavatelePage() {
     setEditName(item.name);
     setEditUnit(item.unit);
     setEditDefaultQty(item.defaultQty ?? '');
+    setEditInventoryId(item.inventoryItemId ?? '');
   }
+
+  const inventoryOptions = inventoryQuery.data?.items ?? [];
+  const invName = (id: string | null) =>
+    id ? inventoryOptions.find((i) => i.id === id)?.name ?? 'surovina' : null;
 
   const saveTemplate = useMutation({
     mutationFn: () =>
@@ -311,7 +341,7 @@ export default function ProvozDodavatelePage() {
 
               <div className="space-y-3 border border-black/10 p-4">
                 <h3 className="font-medium">Položky k objednání</h3>
-                <div className="grid gap-2 sm:grid-cols-4">
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
                   <Input
                     placeholder="Název"
                     value={itemName}
@@ -327,6 +357,19 @@ export default function ProvozDodavatelePage() {
                     value={itemDefaultQty}
                     onChange={(e) => setItemDefaultQty(e.target.value)}
                   />
+                  <select
+                    className="h-9 rounded-md border border-black/15 bg-white px-2 text-sm"
+                    value={itemInventoryId}
+                    onChange={(e) => setItemInventoryId(e.target.value)}
+                    disabled={!can('provoz.stock')}
+                  >
+                    <option value="">Surovina (sklad)</option>
+                    {inventoryOptions.map((i) => (
+                      <option key={i.id} value={i.id}>
+                        {i.name} ({i.unit})
+                      </option>
+                    ))}
+                  </select>
                   <Button
                     type="button"
                     disabled={!itemName.trim() || createItem.isPending}
@@ -339,7 +382,7 @@ export default function ProvozDodavatelePage() {
                   {(itemsQuery.data?.items ?? []).map((item) => (
                     <li key={item.id} className="space-y-2 py-2">
                       {editingItemId === item.id ? (
-                        <div className="grid gap-2 sm:grid-cols-4">
+                        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
                           <Input
                             placeholder="Název"
                             value={editName}
@@ -355,6 +398,19 @@ export default function ProvozDodavatelePage() {
                             value={editDefaultQty}
                             onChange={(e) => setEditDefaultQty(e.target.value)}
                           />
+                          <select
+                            className="h-9 rounded-md border border-black/15 bg-white px-2 text-sm"
+                            value={editInventoryId}
+                            onChange={(e) => setEditInventoryId(e.target.value)}
+                            disabled={!can('provoz.stock')}
+                          >
+                            <option value="">Bez suroviny</option>
+                            {inventoryOptions.map((i) => (
+                              <option key={i.id} value={i.id}>
+                                {i.name} ({i.unit})
+                              </option>
+                            ))}
+                          </select>
                           <div className="flex flex-wrap gap-2">
                             <Button
                               type="button"
@@ -366,6 +422,7 @@ export default function ProvozDodavatelePage() {
                                   name: editName.trim(),
                                   unit: editUnit.trim(),
                                   defaultQty: editDefaultQty.trim(),
+                                  inventoryItemId: editInventoryId || null,
                                 })
                               }
                             >
@@ -381,7 +438,7 @@ export default function ProvozDodavatelePage() {
                             </Button>
                           </div>
                           {updateItem.isError && (
-                            <p className="text-sm text-red-600 sm:col-span-4">
+                            <p className="text-sm text-red-600 sm:col-span-5">
                               {(updateItem.error as Error).message}
                             </p>
                           )}
@@ -392,7 +449,11 @@ export default function ProvozDodavatelePage() {
                             {item.name}{' '}
                             <span className="text-black/50">
                               ({item.unit}
-                              {item.defaultQty ? `, výchozí ${item.defaultQty}` : ''})
+                              {item.defaultQty ? `, výchozí ${item.defaultQty}` : ''}
+                              {invName(item.inventoryItemId)
+                                ? ` → ${invName(item.inventoryItemId)}`
+                                : ''}
+                              )
                             </span>
                           </span>
                           <div className="flex flex-wrap gap-2">

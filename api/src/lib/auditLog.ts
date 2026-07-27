@@ -65,6 +65,12 @@ export const AUDIT_ACTIONS = {
     orderTemplateUpdate: 'provoz.order_template.update',
     orderCreate: 'provoz.order.create',
     orderSend: 'provoz.order.send',
+    orderReceive: 'provoz.order.receive',
+    inventoryItemCreate: 'provoz.inventory_item.create',
+    inventoryItemUpdate: 'provoz.inventory_item.update',
+    inventoryCount: 'provoz.inventory.count',
+    menuVisibility: 'provoz.menu.visibility',
+    menuRecipeUpdate: 'site.menu.recipe.update',
   },
   staff: {
     workerCreate: 'staff.worker.create',

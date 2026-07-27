@@ -9,6 +9,7 @@ import ProvozTrzbyTab from '@/pages/provoz/ProvozTrzbyTab';
 import ProvozUctenkyPage from '@/pages/provoz/ProvozUctenkyPage';
 import ProvozObjednavkyPage from '@/pages/provoz/ProvozObjednavkyPage';
 import ProvozDodavatelePage from '@/pages/provoz/ProvozDodavatelePage';
+import ProvozSkladPage from '@/pages/provoz/ProvozSkladPage';
 import ProvozAplikacePage from '@/pages/provoz/ProvozAplikacePage';
 import WorkersListPage from '@/pages/provoz/WorkersListPage';
 import WorkerDetailPage from '@/pages/provoz/WorkerDetailPage';
@@ -55,6 +56,14 @@ export const routes = [
         element: (
           <ProvozRouteGuard>
             <ProvozDodavatelePage />
+          </ProvozRouteGuard>
+        ),
+      },
+      {
+        path: 'sklad',
+        element: (
+          <ProvozRouteGuard>
+            <ProvozSkladPage />
           </ProvozRouteGuard>
         ),
       },

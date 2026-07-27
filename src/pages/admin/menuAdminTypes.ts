@@ -21,4 +21,5 @@ export type AdminMenuItem = {
   allergenCodes: string | null;
   imageUrl: string | null;
   active: boolean;
+  storyousProductId: string | null;
 };

@@ -18,10 +18,13 @@ import {
   EyeOff,
   LogOut,
   User,
+  UtensilsCrossed,
+  ClipboardList,
 } from "lucide-react";
 import {
   createOrder,
   fetchMe,
+  fetchOpenOrders,
   fetchReceipts,
   fetchSupplierItems,
   fetchSuppliers,
@@ -31,15 +34,19 @@ import {
   login as apiLoginRequest,
   logout as apiLogoutRequest,
   previewOrder,
+  receiveOrder,
   sendOrder,
   uploadReceipt,
   type AuthUser,
+  type OpenOrder,
   type Supplier as ApiSupplier,
   type SupplierItem as ApiSupplierItem,
   type ReceiptUiCategory,
 } from "@/lib/provozApi";
 import { InstallAppBanner } from "@/app/InstallAppBanner";
 import { ShiftsTab } from "@/app/ShiftsTab";
+import { MenuAvailabilityTab } from "@/app/MenuAvailabilityTab";
+import { InventoryCountTab } from "@/app/InventoryCountTab";
 // Logo inlined — avoids Vite asset resolution issues in sandboxed environments
 function StageBistroLogo({ className }: { className?: string }) {
   return (
@@ -64,7 +71,7 @@ const BODY:  React.CSSProperties = { fontFamily: "'DM Sans', sans-serif" };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Tab = "objednavky" | "uctenky" | "smeny";
+type Tab = "objednavky" | "uctenky" | "menu" | "inventura" | "smeny";
 type Supplier = ApiSupplier;
 type SupplierItem = ApiSupplierItem;
 
@@ -304,7 +311,13 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
 
 // ─── ORDERS — supplier list ────────────────────────────────────────────────────
 
-function SuppliersScreen({ onSelect }: { onSelect: (s: Supplier) => void }) {
+function SuppliersScreen({
+  onSelect,
+  onBack,
+}: {
+  onSelect: (s: Supplier) => void;
+  onBack?: () => void;
+}) {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -328,7 +341,16 @@ function SuppliersScreen({ onSelect }: { onSelect: (s: Supplier) => void }) {
 
   return (
     <div className="flex flex-col h-full">
-      <TopBar title="Objednávky" />
+      <div className="flex items-center h-14 border-b border-border px-2 shrink-0 gap-1">
+        {onBack && (
+          <button type="button" onClick={onBack} className="p-2">
+            <ChevronLeft size={20} />
+          </button>
+        )}
+        <p style={{ ...BRAND, letterSpacing: "0.08em" }} className="text-sm font-bold uppercase">
+          Dodavatelé
+        </p>
+      </div>
       {loading ? (
         <div className="flex-1 flex items-center justify-center">
           <Loader2 className="animate-spin text-muted-foreground" size={24} />
@@ -619,10 +641,10 @@ function OrderSuccessScreen({ supplier, lineCount, onNew }: {
 
 // ─── ORDERS tab coordinator ────────────────────────────────────────────────────
 
-type OrderPhase = "suppliers" | "items" | "note" | "preview" | "success";
+type OrderPhase = "hub" | "suppliers" | "items" | "note" | "preview" | "success" | "open" | "receive";
 
 function OrdersTab() {
-  const [phase, setPhase]       = useState<OrderPhase>("suppliers");
+  const [phase, setPhase]       = useState<OrderPhase>("hub");
   const [supplier, setSupplier] = useState<Supplier | null>(null);
   const [lines, setLines]       = useState<OrderLine[]>([]);
   const [note, setNote]         = useState("");
@@ -632,9 +654,70 @@ function OrdersTab() {
   const [sending, setSending]   = useState(false);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [error, setError]       = useState("");
+  const [openOrders, setOpenOrders] = useState<OpenOrder[]>([]);
+  const [loadingOpen, setLoadingOpen] = useState(false);
+  const [receiveTarget, setReceiveTarget] = useState<OpenOrder | null>(null);
+  const [receiveQtys, setReceiveQtys] = useState<Record<string, string>>({});
+  const [receiveChecked, setReceiveChecked] = useState<Record<string, boolean>>({});
+  const [receiveNote, setReceiveNote] = useState("");
+  const [receiving, setReceiving] = useState(false);
+
+  async function loadOpen() {
+    setLoadingOpen(true);
+    setError("");
+    try {
+      setOpenOrders(await fetchOpenOrders());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Načtení selhalo");
+    } finally {
+      setLoadingOpen(false);
+    }
+  }
 
   function selectSupplier(s: Supplier) {
     setSupplier(s); setLines([]); setNote(""); setError(""); setOrderId(null); setPhase("items");
+  }
+
+  function startReceive(order: OpenOrder) {
+    const qtys: Record<string, string> = {};
+    const checked: Record<string, boolean> = {};
+    for (const line of order.lines) {
+      const remaining = line.quantityRemaining ?? line.quantity;
+      qtys[line.id] = remaining;
+      checked[line.id] = Number(String(remaining).replace(",", ".")) > 0;
+    }
+    setReceiveTarget(order);
+    setReceiveQtys(qtys);
+    setReceiveChecked(checked);
+    setReceiveNote("");
+    setPhase("receive");
+  }
+
+  async function handleReceive() {
+    if (!receiveTarget) return;
+    setReceiving(true);
+    setError("");
+    try {
+      const payload = Object.entries(receiveChecked)
+        .filter(([, on]) => on)
+        .map(([orderLineId]) => ({
+          orderLineId,
+          quantityReceived: (receiveQtys[orderLineId] ?? "").trim(),
+        }))
+        .filter((l) => l.quantityReceived);
+      if (payload.length === 0) throw new Error("Označte alespoň jednu položku");
+      await receiveOrder(receiveTarget.id, {
+        note: receiveNote.trim() || null,
+        lines: payload,
+      });
+      setReceiveTarget(null);
+      setPhase("open");
+      await loadOpen();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Příjem selhal");
+    } finally {
+      setReceiving(false);
+    }
   }
 
   async function goPreview() {
@@ -683,13 +766,155 @@ function OrdersTab() {
     }
   }
   function reset() {
-    setPhase("suppliers"); setSupplier(null); setLines([]); setNote(""); setError("");
+    setPhase("hub"); setSupplier(null); setLines([]); setNote(""); setError("");
     setOrderId(null); setSubject(""); setBody("");
   }
 
-  if (phase === "suppliers") return <SuppliersScreen onSelect={selectSupplier} />;
+  if (phase === "hub") {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="flex items-center h-14 border-b border-border px-4 shrink-0">
+          <p style={{ ...BRAND, letterSpacing: "0.08em" }} className="text-sm font-bold uppercase">
+            Objednávky
+          </p>
+        </div>
+        <div className="flex-1 p-4 space-y-3">
+          <button
+            type="button"
+            onClick={() => setPhase("suppliers")}
+            className="w-full flex items-center justify-between px-4 py-5 border border-border text-left active:bg-secondary"
+          >
+            <span className="text-sm font-medium">Nová objednávka</span>
+            <ChevronRight size={18} className="text-muted-foreground" />
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setPhase("open");
+              void loadOpen();
+            }}
+            className="w-full flex items-center justify-between px-4 py-5 border border-border text-left active:bg-secondary"
+          >
+            <span className="text-sm font-medium">Na cestě — příjem</span>
+            <ChevronRight size={18} className="text-muted-foreground" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === "open") {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="flex items-center h-14 border-b border-border px-2 shrink-0 gap-1">
+          <button type="button" onClick={() => setPhase("hub")} className="p-2">
+            <ChevronLeft size={20} />
+          </button>
+          <p style={{ ...BRAND, letterSpacing: "0.08em" }} className="text-sm font-bold uppercase">
+            Na cestě
+          </p>
+        </div>
+        {loadingOpen ? (
+          <div className="flex-1 flex items-center justify-center">
+            <Loader2 className="animate-spin text-muted-foreground" size={24} />
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto">
+            {error && <p className="px-4 py-2 text-sm text-destructive">{error}</p>}
+            <ul className="divide-y divide-border">
+              {openOrders.map((o) => (
+                <li key={o.id}>
+                  <button
+                    type="button"
+                    onClick={() => startReceive(o)}
+                    className="w-full px-4 py-4 text-left active:bg-secondary"
+                  >
+                    <p className="text-sm font-medium">{o.supplier?.name ?? "Dodavatel"}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {o.status} · {o.lines.length} položek
+                    </p>
+                  </button>
+                </li>
+              ))}
+              {openOrders.length === 0 && (
+                <li className="px-4 py-8 text-sm text-muted-foreground">Žádné otevřené objednávky.</li>
+              )}
+            </ul>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (phase === "receive" && receiveTarget) {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="flex items-center h-14 border-b border-border px-2 shrink-0 gap-1">
+          <button type="button" onClick={() => setPhase("open")} className="p-2">
+            <ChevronLeft size={20} />
+          </button>
+          <p style={{ ...BRAND, letterSpacing: "0.08em" }} className="text-sm font-bold uppercase truncate">
+            Příjem
+          </p>
+        </div>
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+          <p className="text-sm font-medium">{receiveTarget.supplier?.name}</p>
+          {receiveTarget.lines.map((line) => (
+            <div key={line.id} className="border border-border p-3 space-y-2">
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={Boolean(receiveChecked[line.id])}
+                  onChange={(e) =>
+                    setReceiveChecked((c) => ({ ...c, [line.id]: e.target.checked }))
+                  }
+                />
+                <span className="text-sm">
+                  <span className="font-medium">{line.nameSnapshot}</span>
+                  <span className="block text-xs text-muted-foreground">
+                    {line.quantity} {line.unitSnapshot}
+                    {line.quantityRemaining != null ? ` · zbývá ${line.quantityRemaining}` : ""}
+                  </span>
+                </span>
+              </label>
+              {receiveChecked[line.id] && (
+                <input
+                  className="w-full h-10 bg-secondary px-3 text-sm border border-border"
+                  value={receiveQtys[line.id] ?? ""}
+                  onChange={(e) =>
+                    setReceiveQtys((q) => ({ ...q, [line.id]: e.target.value }))
+                  }
+                  inputMode="decimal"
+                />
+              )}
+            </div>
+          ))}
+          <input
+            className="w-full h-10 bg-secondary px-3 text-sm border border-border"
+            placeholder="Poznámka k závozu"
+            value={receiveNote}
+            onChange={(e) => setReceiveNote(e.target.value)}
+          />
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </div>
+        <div className="px-4 pb-6 pt-3 border-t border-border shrink-0">
+          <button
+            type="button"
+            disabled={receiving}
+            onClick={() => void handleReceive()}
+            className="w-full h-12 bg-primary text-primary-foreground text-[11px] font-semibold uppercase tracking-wider disabled:opacity-40"
+          >
+            {receiving ? "Přijímám…" : "Přijmout na sklad"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === "suppliers") return <SuppliersScreen onSelect={selectSupplier} onBack={() => setPhase("hub")} />;
   if (phase === "items" && supplier)
-    return <ItemsScreen supplier={supplier} lines={lines} onChange={setLines} onBack={reset} onNext={() => setPhase("note")} />;
+    return <ItemsScreen supplier={supplier} lines={lines} onChange={setLines} onBack={() => setPhase("suppliers")} onNext={() => setPhase("note")} />;
   if (phase === "note")
     return <OrderNoteScreen lines={lines} note={note} onNoteChange={setNote} onBack={() => setPhase("items")} onNext={() => void goPreview()} />;
   if (phase === "preview" && supplier)
@@ -943,14 +1168,22 @@ function TabBar({
   active,
   onChange,
   showShifts,
+  showStock,
 }: {
   active: Tab;
   onChange: (t: Tab) => void;
   showShifts: boolean;
+  showStock: boolean;
 }) {
   const tabs = [
     { id: "objednavky" as Tab, label: "Objednávky", Icon: ShoppingCart },
     { id: "uctenky" as Tab, label: "Účtenky", Icon: Camera },
+    ...(showStock
+      ? [
+          { id: "menu" as Tab, label: "Menu", Icon: UtensilsCrossed },
+          { id: "inventura" as Tab, label: "Inventura", Icon: ClipboardList },
+        ]
+      : []),
     ...(showShifts
       ? [{ id: "smeny" as Tab, label: "Směny", Icon: CalendarDays }]
       : []),
@@ -983,6 +1216,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>("objednavky");
 
   const showShifts = hasPermission(user?.permissions, "staff.shifts");
+  const showStock = hasPermission(user?.permissions, "provoz.stock");
 
   useEffect(() => {
     let cancelled = false;
@@ -1001,7 +1235,8 @@ export default function App() {
 
   useEffect(() => {
     if (tab === "smeny" && !showShifts) setTab("objednavky");
-  }, [tab, showShifts]);
+    if ((tab === "menu" || tab === "inventura") && !showStock) setTab("objednavky");
+  }, [tab, showShifts, showStock]);
 
   function handleLogin(next: AuthUser) {
     setUser(next);
@@ -1034,9 +1269,16 @@ export default function App() {
             <div className="flex-1 overflow-hidden flex flex-col">
               {tab === "objednavky" && <OrdersTab />}
               {tab === "uctenky" && <ReceiptsTab />}
+              {tab === "menu" && <MenuAvailabilityTab />}
+              {tab === "inventura" && <InventoryCountTab />}
               {tab === "smeny" && <ShiftsTab permissions={user.permissions} />}
             </div>
-            <TabBar active={tab} onChange={setTab} showShifts={showShifts} />
+            <TabBar
+              active={tab}
+              onChange={setTab}
+              showShifts={showShifts}
+              showStock={showStock}
+            />
           </>
         )}
       </div>

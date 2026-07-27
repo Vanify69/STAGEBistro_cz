@@ -35,6 +35,7 @@ export type ItemFormState = {
   allergenCodes: string;
   imageUrl: string;
   active: boolean;
+  storyousProductId: string;
 };
 
 export function slugify(text: string): string {
@@ -83,6 +84,7 @@ export const emptyItem = (categoryId: string): ItemFormState => ({
   allergenCodes: '',
   imageUrl: '',
   active: true,
+  storyousProductId: '',
 });
 
 export function ImageUrlField({

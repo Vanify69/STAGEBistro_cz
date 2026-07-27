@@ -1,11 +1,13 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { asc, eq, and, gte, lte } from 'drizzle-orm';
+import { asc, eq, and, gte, lte, inArray } from 'drizzle-orm';
 import { getDb } from '../db/index.js';
 import {
   siteSettings,
   menuCategories,
   menuItems,
+  menuRecipeLines,
+  inventoryItems,
   galleryImages,
   headerEvents,
 } from '../db/schema.js';
@@ -18,6 +20,7 @@ import { putStorageBuffer } from '../lib/storage.js';
 import { DEFAULT_MENU_ICON_KEY, MENU_ICON_KEYS } from '../lib/menuIconKeys.js';
 import { auditAction, AUDIT_ACTIONS, writeAudit } from '../lib/auditLog.js';
 import { adminUsersRouter } from './adminUsers.js';
+import { formatQty, parseQty } from '../lib/stockQty.js';
 
 export const adminRouter = new Hono<{ Variables: { user: AuthUser } }>();
 
@@ -171,6 +174,7 @@ const itemSchema = z.object({
   allergenCodes: z.string().nullable().optional(),
   imageUrl: z.string().nullable().optional(),
   active: z.boolean().optional(),
+  storyousProductId: z.string().max(120).nullable().optional(),
 });
 
 adminRouter.get('/menu/items', requirePermission('site.menu'), async (c) => {
@@ -197,6 +201,7 @@ adminRouter.post('/menu/items', requirePermission('site.menu'), async (c) => {
       allergenCodes: parsed.data.allergenCodes ?? null,
       imageUrl: normalizePublicMediaUrl(parsed.data.imageUrl ?? null),
       active: parsed.data.active ?? true,
+      storyousProductId: parsed.data.storyousProductId?.trim() || null,
     })
     .returning();
   await auditAction(c, {
@@ -246,6 +251,91 @@ adminRouter.delete('/menu/items/:id', requirePermission('site.menu'), async (c) 
     summary: `Smazána položka menu: ${existing.nameCz}`,
   });
   return c.json({ ok: true });
+});
+
+const recipePutSchema = z.object({
+  lines: z.array(
+    z.object({
+      inventoryItemId: z.string().uuid(),
+      quantityPerPortion: z.string().min(1).max(40),
+    })
+  ),
+});
+
+adminRouter.get('/menu/items/:id/recipe', requirePermission('site.menu'), async (c) => {
+  const id = c.req.param('id');
+  const db = getDb();
+  const [item] = await db.select().from(menuItems).where(eq(menuItems.id, id)).limit(1);
+  if (!item) return c.json({ error: 'Not found' }, 404);
+  const lines = await db.select().from(menuRecipeLines).where(eq(menuRecipeLines.menuItemId, id));
+  const invIds = [...new Set(lines.map((l) => l.inventoryItemId))];
+  const inv =
+    invIds.length > 0
+      ? await db.select().from(inventoryItems).where(inArray(inventoryItems.id, invIds))
+      : [];
+  const invMap = new Map(inv.map((i) => [i.id, i]));
+  return c.json({
+    itemId: id,
+    lines: lines.map((l) => ({
+      ...l,
+      inventoryItem: invMap.get(l.inventoryItemId) ?? null,
+    })),
+  });
+});
+
+adminRouter.put('/menu/items/:id/recipe', requirePermission('site.menu'), async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json().catch(() => null);
+  const parsed = recipePutSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: 'Invalid body' }, 400);
+  const db = getDb();
+  const [item] = await db.select().from(menuItems).where(eq(menuItems.id, id)).limit(1);
+  if (!item) return c.json({ error: 'Not found' }, 404);
+
+  const resolved: { inventoryItemId: string; quantityPerPortion: string }[] = [];
+  const seen = new Set<string>();
+  for (const line of parsed.data.lines) {
+    if (seen.has(line.inventoryItemId)) {
+      return c.json({ error: 'Duplicitní surovina v receptuře' }, 400);
+    }
+    seen.add(line.inventoryItemId);
+    const qty = parseQty(line.quantityPerPortion);
+    if (qty == null || qty <= 0) {
+      return c.json({ error: 'Neplatné množství v receptuře' }, 400);
+    }
+    resolved.push({ inventoryItemId: line.inventoryItemId, quantityPerPortion: formatQty(qty) });
+  }
+
+  if (resolved.length > 0) {
+    const inv = await db
+      .select()
+      .from(inventoryItems)
+      .where(inArray(inventoryItems.id, resolved.map((r) => r.inventoryItemId)));
+    if (inv.length !== resolved.length) {
+      return c.json({ error: 'Některá surovina neexistuje' }, 400);
+    }
+  }
+
+  await db.delete(menuRecipeLines).where(eq(menuRecipeLines.menuItemId, id));
+  if (resolved.length > 0) {
+    await db.insert(menuRecipeLines).values(
+      resolved.map((r) => ({
+        menuItemId: id,
+        inventoryItemId: r.inventoryItemId,
+        quantityPerPortion: r.quantityPerPortion,
+      }))
+    );
+  }
+
+  await auditAction(c, {
+    action: AUDIT_ACTIONS.provoz.menuRecipeUpdate,
+    entityType: 'menu_item',
+    entityId: id,
+    summary: `Receptura: ${item.nameCz} (${resolved.length} surovin)`,
+  });
+
+  const lines = await db.select().from(menuRecipeLines).where(eq(menuRecipeLines.menuItemId, id));
+  return c.json({ itemId: id, lines });
 });
 
 const uploadPurposeSchema = z.enum(['menu-item', 'menu-category', 'menu-hero', 'gallery', 'menu-icon']);

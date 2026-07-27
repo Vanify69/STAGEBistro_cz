@@ -12,6 +12,7 @@ import { auditAction, AUDIT_ACTIONS, writeAudit } from '../lib/auditLog.js';
 import { notifyAccountingOfReceipt } from '../lib/receiptAccountingNotify.js';
 import { provozStaffRouter } from './provozStaff.js';
 import { provozOrdersRouter } from './provozOrders.js';
+import { provozStockRouter } from './provozStock.js';
 
 export const provozRouter = new Hono<{ Variables: { user: AuthUser } }>();
 
@@ -19,6 +20,7 @@ provozRouter.use('*', requireAuth);
 
 provozRouter.route('/', provozStaffRouter);
 provozRouter.route('/', provozOrdersRouter);
+provozRouter.route('/', provozStockRouter);
 
 const dailySchema = z.object({
   cashCents: z.number().int().min(0),

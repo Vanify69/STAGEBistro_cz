@@ -30,14 +30,46 @@ type LineDraft = {
   lineNote: string;
 };
 
+type OrderLine = {
+  id: string;
+  nameSnapshot: string;
+  unitSnapshot: string;
+  quantity: string;
+  lineNote: string | null;
+  quantityReceived?: string;
+  quantityRemaining?: string;
+};
+
+type OpenOrder = {
+  id: string;
+  status: string;
+  sentAt: string | null;
+  createdAt: string;
+  supplier: Supplier | null;
+  lines: OrderLine[];
+};
+
 type Step = 'suppliers' | 'items' | 'preview' | 'done';
+type View = 'new' | 'open' | 'receive';
+
+function formatWhen(iso: string): string {
+  try {
+    return new Intl.DateTimeFormat('cs-CZ', { dateStyle: 'short', timeStyle: 'short' }).format(
+      new Date(iso)
+    );
+  } catch {
+    return iso;
+  }
+}
 
 export default function ProvozObjednavkyPage() {
   const qc = useQueryClient();
   const { allowed } = useProvozAuth();
   const { can } = usePermissions();
   const canSend = can('provoz.orders.send') || can('provoz.orders');
+  const canReceive = can('provoz.stock');
 
+  const [view, setView] = useState<View>(canSend ? 'new' : 'open');
   const [step, setStep] = useState<Step>('suppliers');
   const [supplierId, setSupplierId] = useState<string | null>(null);
   const [lines, setLines] = useState<Record<string, LineDraft>>({});
@@ -48,17 +80,28 @@ export default function ProvozObjednavkyPage() {
   );
   const [resultMsg, setResultMsg] = useState<string | null>(null);
 
+  const [receiveOrderId, setReceiveOrderId] = useState<string | null>(null);
+  const [receiveQtys, setReceiveQtys] = useState<Record<string, string>>({});
+  const [receiveChecked, setReceiveChecked] = useState<Record<string, boolean>>({});
+  const [receiveNote, setReceiveNote] = useState('');
+
   const suppliersQuery = useQuery({
     queryKey: ['provoz', 'suppliers'],
     queryFn: () => apiFetch<{ suppliers: Supplier[] }>('/api/provoz/suppliers'),
-    enabled: allowed && canSend,
+    enabled: allowed && canSend && view === 'new',
   });
 
   const itemsQuery = useQuery({
     queryKey: ['provoz', 'supplier-items', supplierId],
     queryFn: () =>
       apiFetch<{ items: SupplierItem[] }>(`/api/provoz/suppliers/${supplierId}/items`),
-    enabled: allowed && canSend && Boolean(supplierId),
+    enabled: allowed && canSend && Boolean(supplierId) && view === 'new',
+  });
+
+  const openOrdersQuery = useQuery({
+    queryKey: ['provoz', 'orders', 'open'],
+    queryFn: () => apiFetch<{ orders: OpenOrder[] }>('/api/provoz/orders?status=open&limit=50'),
+    enabled: allowed && canReceive && (view === 'open' || view === 'receive'),
   });
 
   const selectedSupplier = useMemo(
@@ -76,13 +119,15 @@ export default function ProvozObjednavkyPage() {
       }));
   }, [itemsQuery.data, lines]);
 
+  const receiveOrder = useMemo(
+    () => (openOrdersQuery.data?.orders ?? []).find((o) => o.id === receiveOrderId) ?? null,
+    [openOrdersQuery.data, receiveOrderId]
+  );
+
   function pickSupplier(id: string) {
     setSupplierId(id);
     setLines({});
     setOrderNote('');
-    setOrderId(null);
-    setPreview(null);
-    setResultMsg(null);
     setStep('items');
   }
 
@@ -97,28 +142,36 @@ export default function ProvozObjednavkyPage() {
   }
 
   function updateLine(item: SupplierItem, patch: Partial<LineDraft>) {
-    setLines((prev) => {
-      const current = prev[item.id] ?? {
-        selected: false,
-        quantity: item.defaultQty ?? '',
-        lineNote: '',
-      };
-      return { ...prev, [item.id]: { ...current, ...patch } };
-    });
+    setLines((prev) => ({
+      ...prev,
+      [item.id]: { ...ensureDraft(item), ...patch },
+    }));
+  }
+
+  function startReceive(order: OpenOrder) {
+    const qtys: Record<string, string> = {};
+    const checked: Record<string, boolean> = {};
+    for (const line of order.lines) {
+      const remaining = line.quantityRemaining ?? line.quantity;
+      qtys[line.id] = remaining;
+      checked[line.id] = Number(remaining) > 0;
+    }
+    setReceiveOrderId(order.id);
+    setReceiveQtys(qtys);
+    setReceiveChecked(checked);
+    setReceiveNote('');
+    setView('receive');
   }
 
   const createAndPreview = useMutation({
     mutationFn: async () => {
       if (!supplierId) throw new Error('Vyberte dodavatele');
-      if (selectedLines.length === 0) throw new Error('Vyberte alespoň jednu položku');
       for (const row of selectedLines) {
         if (!row.draft.quantity.trim()) {
-          throw new Error(`Doplňte množství u položky ${row.item.name}`);
+          throw new Error(`Doplňte množství: ${row.item.name}`);
         }
       }
-      const created = await apiFetch<{
-        order: { id: string };
-      }>('/api/provoz/orders', {
+      const created = await apiFetch<{ order: { id: string } }>('/api/provoz/orders', {
         method: 'POST',
         body: JSON.stringify({
           supplierId,
@@ -130,15 +183,13 @@ export default function ProvozObjednavkyPage() {
           })),
         }),
       });
+      const id = created.order.id;
+      setOrderId(id);
       const prev = await apiFetch<{ to: string; subject: string; body: string }>(
-        `/api/provoz/orders/${created.order.id}/preview`,
+        `/api/provoz/orders/${id}/preview`,
         { method: 'POST', body: '{}' }
       );
-      return { orderId: created.order.id, preview: prev };
-    },
-    onSuccess: (res) => {
-      setOrderId(res.orderId);
-      setPreview(res.preview);
+      setPreview(prev);
       setStep('preview');
     },
   });
@@ -146,10 +197,10 @@ export default function ProvozObjednavkyPage() {
   const sendOrder = useMutation({
     mutationFn: async () => {
       if (!orderId) throw new Error('Chybí objednávka');
-      return apiFetch<{ emailed: boolean; error?: string; order: { status: string } }>(
-        `/api/provoz/orders/${orderId}/send`,
-        { method: 'POST', body: '{}' }
-      );
+      return apiFetch<{ emailed: boolean; error?: string }>(`/api/provoz/orders/${orderId}/send`, {
+        method: 'POST',
+        body: '{}',
+      });
     },
     onSuccess: (res) => {
       setResultMsg(
@@ -162,15 +213,39 @@ export default function ProvozObjednavkyPage() {
     },
   });
 
-  if (!canSend) {
-    return <p className="text-sm text-black/60">Nemáte oprávnění odesílat objednávky.</p>;
+  const receiveMutation = useMutation({
+    mutationFn: async () => {
+      if (!receiveOrderId) throw new Error('Chybí objednávka');
+      const linesPayload = Object.entries(receiveChecked)
+        .filter(([, on]) => on)
+        .map(([orderLineId]) => ({
+          orderLineId,
+          quantityReceived: (receiveQtys[orderLineId] ?? '').trim(),
+        }))
+        .filter((l) => l.quantityReceived);
+      if (linesPayload.length === 0) throw new Error('Označte alespoň jednu položku');
+      return apiFetch(`/api/provoz/orders/${receiveOrderId}/receive`, {
+        method: 'POST',
+        body: JSON.stringify({ note: receiveNote.trim() || null, lines: linesPayload }),
+      });
+    },
+    onSuccess: () => {
+      setView('open');
+      setReceiveOrderId(null);
+      qc.invalidateQueries({ queryKey: ['provoz', 'orders'] });
+      qc.invalidateQueries({ queryKey: ['provoz', 'inventory-items'] });
+    },
+  });
+
+  if (!canSend && !canReceive) {
+    return <p className="text-sm text-black/60">Nemáte oprávnění k objednávkám.</p>;
   }
 
   return (
     <div className="mx-auto max-w-lg space-y-6 pb-20">
       <div>
         <h2 className="text-xl font-medium tracking-tight">Objednávky</h2>
-        <p className="mt-1 text-sm text-black/60">Objednejte suroviny od dodavatele e-mailem.</p>
+        <p className="mt-1 text-sm text-black/60">Objednejte suroviny a přijměte závozy na sklad.</p>
         {can('provoz.orders') && (
           <p className="mt-2 text-sm">
             <Link to="/provoz/dodavatele" className="underline underline-offset-2">
@@ -180,159 +255,275 @@ export default function ProvozObjednavkyPage() {
         )}
       </div>
 
-      {step === 'suppliers' && (
+      <div className="flex gap-2">
+        {canSend && (
+          <Button
+            type="button"
+            size="sm"
+            variant={view === 'new' ? 'default' : 'outline'}
+            onClick={() => setView('new')}
+          >
+            Nová
+          </Button>
+        )}
+        {canReceive && (
+          <Button
+            type="button"
+            size="sm"
+            variant={view === 'open' || view === 'receive' ? 'default' : 'outline'}
+            onClick={() => setView('open')}
+          >
+            Na cestě
+          </Button>
+        )}
+      </div>
+
+      {view === 'open' && canReceive && (
         <section className="space-y-2">
-          <h3 className="text-sm font-medium">Vyberte dodavatele</h3>
           <ul className="divide-y divide-black/10 border border-black/10">
-            {(suppliersQuery.data?.suppliers ?? []).map((s) => (
-              <li key={s.id}>
+            {(openOrdersQuery.data?.orders ?? []).map((o) => (
+              <li key={o.id}>
                 <button
                   type="button"
                   className="flex w-full flex-col gap-0.5 px-4 py-4 text-left hover:bg-black/5"
-                  onClick={() => pickSupplier(s.id)}
+                  onClick={() => startReceive(o)}
                 >
-                  <span className="font-medium">{s.name}</span>
-                  <span className="text-xs text-black/50">{s.email}</span>
+                  <span className="font-medium">{o.supplier?.name ?? 'Dodavatel'}</span>
+                  <span className="text-xs text-black/50">
+                    {o.status} · {formatWhen(o.sentAt ?? o.createdAt)} · {o.lines.length} položek
+                  </span>
                 </button>
               </li>
             ))}
-            {(suppliersQuery.data?.suppliers ?? []).length === 0 && (
-              <li className="px-4 py-6 text-sm text-black/50">
-                Žádní aktivní dodavatelé. Nejdřív je přidejte ve správě.
-              </li>
+            {(openOrdersQuery.data?.orders ?? []).length === 0 && (
+              <li className="px-4 py-6 text-sm text-black/50">Žádné objednávky na cestě.</li>
             )}
           </ul>
         </section>
       )}
 
-      {step === 'items' && selectedSupplier && (
+      {view === 'receive' && receiveOrder && (
         <section className="space-y-4">
           <button
             type="button"
             className="text-sm text-black/60 underline underline-offset-2"
-            onClick={() => setStep('suppliers')}
+            onClick={() => setView('open')}
           >
-            ← {selectedSupplier.name}
+            ← Zpět
           </button>
-
+          <h3 className="font-medium">{receiveOrder.supplier?.name}</h3>
           <ul className="space-y-3">
-            {(itemsQuery.data?.items ?? []).map((item) => {
-              const draft = ensureDraft(item);
-              return (
-                <li key={item.id} className="border border-black/10 p-3">
-                  <label className="flex items-start gap-3">
-                    <input
-                      type="checkbox"
-                      className="mt-1"
-                      checked={draft.selected}
-                      onChange={(e) => updateLine(item, { selected: e.target.checked })}
-                    />
-                    <span className="flex-1">
-                      <span className="font-medium">{item.name}</span>
-                      <span className="text-black/50"> ({item.unit})</span>
+            {receiveOrder.lines.map((line) => (
+              <li key={line.id} className="border border-black/10 p-3">
+                <label className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={Boolean(receiveChecked[line.id])}
+                    onChange={(e) =>
+                      setReceiveChecked((c) => ({ ...c, [line.id]: e.target.checked }))
+                    }
+                  />
+                  <span className="flex-1 text-sm">
+                    <span className="font-medium">{line.nameSnapshot}</span>
+                    <span className="block text-black/50">
+                      objednáno {line.quantity} {line.unitSnapshot}
+                      {line.quantityReceived
+                        ? ` · přijato ${line.quantityReceived} · zbývá ${line.quantityRemaining}`
+                        : ''}
                     </span>
-                  </label>
-                  {draft.selected && (
-                    <div className="mt-3 grid gap-2 pl-7">
-                      <div>
-                        <Label>Množství</Label>
-                        <Input
-                          value={draft.quantity}
-                          onChange={(e) => updateLine(item, { quantity: e.target.value })}
-                          inputMode="decimal"
-                        />
-                      </div>
-                      <div>
-                        <Label>Poznámka k položce</Label>
-                        <Input
-                          value={draft.lineNote}
-                          onChange={(e) => updateLine(item, { lineNote: e.target.value })}
-                        />
-                      </div>
-                    </div>
-                  )}
-                </li>
-              );
-            })}
+                  </span>
+                </label>
+                {receiveChecked[line.id] && (
+                  <div className="mt-2 pl-7">
+                    <Label>Dodané množství</Label>
+                    <Input
+                      value={receiveQtys[line.id] ?? ''}
+                      onChange={(e) =>
+                        setReceiveQtys((q) => ({ ...q, [line.id]: e.target.value }))
+                      }
+                      inputMode="decimal"
+                    />
+                  </div>
+                )}
+              </li>
+            ))}
           </ul>
-
-          {(itemsQuery.data?.items ?? []).length === 0 && (
-            <p className="text-sm text-black/50">Tento dodavatel nemá aktivní položky.</p>
-          )}
-
           <div>
-            <Label>Poznámka k objednávce</Label>
-            <Textarea rows={2} value={orderNote} onChange={(e) => setOrderNote(e.target.value)} />
+            <Label>Poznámka k závozu</Label>
+            <Textarea rows={2} value={receiveNote} onChange={(e) => setReceiveNote(e.target.value)} />
           </div>
-
-          {createAndPreview.isError && (
-            <p className="text-sm text-red-600">{(createAndPreview.error as Error).message}</p>
-          )}
-
-          <Button
-            type="button"
-            className="h-12 w-full"
-            disabled={selectedLines.length === 0 || createAndPreview.isPending}
-            onClick={() => createAndPreview.mutate()}
-          >
-            {createAndPreview.isPending ? 'Připravuji…' : 'Náhled e-mailu'}
-          </Button>
-        </section>
-      )}
-
-      {step === 'preview' && preview && (
-        <section className="space-y-4">
-          <button
-            type="button"
-            className="text-sm text-black/60 underline underline-offset-2"
-            onClick={() => setStep('items')}
-          >
-            ← Zpět k položkám
-          </button>
-          <div className="space-y-2 border border-black/10 p-4 text-sm">
-            <p>
-              <span className="text-black/50">Komu:</span> {preview.to}
-            </p>
-            <p>
-              <span className="text-black/50">Předmět:</span> {preview.subject}
-            </p>
-            <pre className="whitespace-pre-wrap border-t border-black/10 pt-3 font-sans">
-              {preview.body}
-            </pre>
-          </div>
-          {sendOrder.isError && (
-            <p className="text-sm text-red-600">{(sendOrder.error as Error).message}</p>
+          {receiveMutation.isError && (
+            <p className="text-sm text-red-600">{(receiveMutation.error as Error).message}</p>
           )}
           <Button
             type="button"
             className="h-12 w-full"
-            disabled={sendOrder.isPending}
-            onClick={() => sendOrder.mutate()}
+            disabled={receiveMutation.isPending}
+            onClick={() => receiveMutation.mutate()}
           >
-            {sendOrder.isPending ? 'Odesílám…' : 'Odeslat dodavateli'}
+            {receiveMutation.isPending ? 'Přijímám…' : 'Přijmout na sklad'}
           </Button>
         </section>
       )}
 
-      {step === 'done' && (
-        <section className="space-y-4">
-          <p className="text-sm">{resultMsg}</p>
-          <Button
-            type="button"
-            className="h-12 w-full"
-            onClick={() => {
-              setStep('suppliers');
-              setSupplierId(null);
-              setLines({});
-              setOrderNote('');
-              setOrderId(null);
-              setPreview(null);
-              setResultMsg(null);
-            }}
-          >
-            Nová objednávka
-          </Button>
-        </section>
+      {view === 'new' && canSend && (
+        <>
+          {step === 'suppliers' && (
+            <section className="space-y-2">
+              <h3 className="text-sm font-medium">Vyberte dodavatele</h3>
+              <ul className="divide-y divide-black/10 border border-black/10">
+                {(suppliersQuery.data?.suppliers ?? []).map((s) => (
+                  <li key={s.id}>
+                    <button
+                      type="button"
+                      className="flex w-full flex-col gap-0.5 px-4 py-4 text-left hover:bg-black/5"
+                      onClick={() => pickSupplier(s.id)}
+                    >
+                      <span className="font-medium">{s.name}</span>
+                      <span className="text-xs text-black/50">{s.email}</span>
+                    </button>
+                  </li>
+                ))}
+                {(suppliersQuery.data?.suppliers ?? []).length === 0 && (
+                  <li className="px-4 py-6 text-sm text-black/50">
+                    Žádní aktivní dodavatelé. Nejdřív je přidejte ve správě.
+                  </li>
+                )}
+              </ul>
+            </section>
+          )}
+
+          {step === 'items' && selectedSupplier && (
+            <section className="space-y-4">
+              <button
+                type="button"
+                className="text-sm text-black/60 underline underline-offset-2"
+                onClick={() => setStep('suppliers')}
+              >
+                ← {selectedSupplier.name}
+              </button>
+
+              <ul className="space-y-3">
+                {(itemsQuery.data?.items ?? []).map((item) => {
+                  const draft = ensureDraft(item);
+                  return (
+                    <li key={item.id} className="border border-black/10 p-3">
+                      <label className="flex items-start gap-3">
+                        <input
+                          type="checkbox"
+                          className="mt-1"
+                          checked={draft.selected}
+                          onChange={(e) => updateLine(item, { selected: e.target.checked })}
+                        />
+                        <span className="flex-1">
+                          <span className="font-medium">{item.name}</span>
+                          <span className="text-black/50"> ({item.unit})</span>
+                        </span>
+                      </label>
+                      {draft.selected && (
+                        <div className="mt-3 grid gap-2 pl-7">
+                          <div>
+                            <Label>Množství</Label>
+                            <Input
+                              value={draft.quantity}
+                              onChange={(e) => updateLine(item, { quantity: e.target.value })}
+                              inputMode="decimal"
+                            />
+                          </div>
+                          <div>
+                            <Label>Poznámka k položce</Label>
+                            <Input
+                              value={draft.lineNote}
+                              onChange={(e) => updateLine(item, { lineNote: e.target.value })}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+
+              {(itemsQuery.data?.items ?? []).length === 0 && (
+                <p className="text-sm text-black/50">Tento dodavatel nemá aktivní položky.</p>
+              )}
+
+              <div>
+                <Label>Poznámka k objednávce</Label>
+                <Textarea rows={2} value={orderNote} onChange={(e) => setOrderNote(e.target.value)} />
+              </div>
+
+              {createAndPreview.isError && (
+                <p className="text-sm text-red-600">{(createAndPreview.error as Error).message}</p>
+              )}
+
+              <Button
+                type="button"
+                className="h-12 w-full"
+                disabled={selectedLines.length === 0 || createAndPreview.isPending}
+                onClick={() => createAndPreview.mutate()}
+              >
+                {createAndPreview.isPending ? 'Připravuji…' : 'Náhled e-mailu'}
+              </Button>
+            </section>
+          )}
+
+          {step === 'preview' && preview && (
+            <section className="space-y-4">
+              <button
+                type="button"
+                className="text-sm text-black/60 underline underline-offset-2"
+                onClick={() => setStep('items')}
+              >
+                ← Zpět k položkám
+              </button>
+              <div className="space-y-2 border border-black/10 p-4 text-sm">
+                <p>
+                  <span className="text-black/50">Komu:</span> {preview.to}
+                </p>
+                <p>
+                  <span className="text-black/50">Předmět:</span> {preview.subject}
+                </p>
+                <pre className="whitespace-pre-wrap border-t border-black/10 pt-3 font-sans">
+                  {preview.body}
+                </pre>
+              </div>
+              {sendOrder.isError && (
+                <p className="text-sm text-red-600">{(sendOrder.error as Error).message}</p>
+              )}
+              <Button
+                type="button"
+                className="h-12 w-full"
+                disabled={sendOrder.isPending}
+                onClick={() => sendOrder.mutate()}
+              >
+                {sendOrder.isPending ? 'Odesílám…' : 'Odeslat dodavateli'}
+              </Button>
+            </section>
+          )}
+
+          {step === 'done' && (
+            <section className="space-y-4">
+              <p className="text-sm">{resultMsg}</p>
+              <Button
+                type="button"
+                className="h-12 w-full"
+                onClick={() => {
+                  setStep('suppliers');
+                  setSupplierId(null);
+                  setLines({});
+                  setOrderNote('');
+                  setOrderId(null);
+                  setPreview(null);
+                  setResultMsg(null);
+                }}
+              >
+                Nová objednávka
+              </Button>
+            </section>
+          )}
+        </>
       )}
     </div>
   );

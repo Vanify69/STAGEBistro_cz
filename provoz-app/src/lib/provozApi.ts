@@ -131,6 +131,92 @@ export async function sendOrder(
   });
 }
 
+export type OpenOrderLine = {
+  id: string;
+  nameSnapshot: string;
+  unitSnapshot: string;
+  quantity: string;
+  lineNote: string | null;
+  quantityReceived?: string;
+  quantityRemaining?: string;
+};
+
+export type OpenOrder = {
+  id: string;
+  status: string;
+  sentAt: string | null;
+  createdAt: string;
+  supplier: Supplier | null;
+  lines: OpenOrderLine[];
+};
+
+export async function fetchOpenOrders(): Promise<OpenOrder[]> {
+  const res = await apiFetch<{ orders: OpenOrder[] }>(
+    '/api/provoz/orders?status=open&limit=50'
+  );
+  return res.orders;
+}
+
+export async function receiveOrder(
+  orderId: string,
+  input: {
+    note: string | null;
+    lines: { orderLineId: string; quantityReceived: string }[];
+  }
+): Promise<void> {
+  await apiFetch(`/api/provoz/orders/${orderId}/receive`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export type MenuAvailabilityItem = {
+  id: string;
+  nameCz: string;
+  active: boolean;
+  categoryNameCz: string | null;
+  sellableCount: number | null;
+  hasRecipe: boolean;
+};
+
+export async function fetchMenuAvailability(): Promise<MenuAvailabilityItem[]> {
+  const res = await apiFetch<{ items: MenuAvailabilityItem[] }>(
+    '/api/provoz/menu-availability'
+  );
+  return res.items;
+}
+
+export async function setMenuItemVisibility(id: string, active: boolean): Promise<void> {
+  await apiFetch(`/api/provoz/menu-items/${id}/visibility`, {
+    method: 'PATCH',
+    body: JSON.stringify({ active }),
+  });
+}
+
+export type InventoryItem = {
+  id: string;
+  name: string;
+  unit: string;
+  qtyOnHand: string;
+  minQty: string | null;
+  active: boolean;
+};
+
+export async function fetchInventoryItems(): Promise<InventoryItem[]> {
+  const res = await apiFetch<{ items: InventoryItem[] }>('/api/provoz/inventory-items');
+  return res.items;
+}
+
+export async function submitInventoryCount(input: {
+  note: string | null;
+  lines: { inventoryItemId: string; countedQty: string }[];
+}): Promise<void> {
+  await apiFetch('/api/provoz/inventory-counts', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
 export async function fetchReceipts(): Promise<ApiReceipt[]> {
   const res = await apiFetch<{ receipts: ApiReceipt[] }>('/api/provoz/receipts');
   return res.receipts;

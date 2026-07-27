@@ -10,13 +10,32 @@ import {
   uniqueIndex,
   primaryKey,
   pgEnum,
+  numeric,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 export const roleEnum = pgEnum('user_role', ['admin', 'provoz', 'ucetni']);
 export const receiptCategoryEnum = pgEnum('receipt_category', ['nafta', 'suroviny', 'ostatni']);
 export const receiptStatusEnum = pgEnum('receipt_status', ['pending', 'booked']);
-export const purchaseOrderStatusEnum = pgEnum('purchase_order_status', ['draft', 'sent', 'failed']);
+export const purchaseOrderStatusEnum = pgEnum('purchase_order_status', [
+  'draft',
+  'sent',
+  'failed',
+  'partial',
+  'received',
+]);
+export const stockMovementKindEnum = pgEnum('stock_movement_kind', [
+  'receive',
+  'inventory_adjust',
+  'waste',
+  'sale',
+]);
+export const stockMovementSourceEnum = pgEnum('stock_movement_source', [
+  'manual',
+  'receive',
+  'inventory',
+  'pos',
+]);
 export const workerStatusEnum = pgEnum('worker_status', [
   'draft',
   'contract_pending',
@@ -91,6 +110,8 @@ export const menuItems = pgTable('menu_item', {
   allergenCodes: text('allergen_codes'),
   imageUrl: text('image_url'),
   active: boolean('active').notNull().default(true),
+  /** Storyous product id — párování s POS (napojení později) */
+  storyousProductId: text('storyous_product_id'),
 });
 
 export const galleryImages = pgTable('gallery_image', {
@@ -159,6 +180,18 @@ export const suppliers = pgTable('supplier', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const inventoryItems = pgTable('inventory_item', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+  unit: text('unit').notNull().default('ks'),
+  qtyOnHand: numeric('qty_on_hand', { precision: 18, scale: 6 }).notNull().default('0'),
+  minQty: numeric('min_qty', { precision: 18, scale: 6 }),
+  active: boolean('active').notNull().default(true),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const supplierItems = pgTable('supplier_item', {
   id: uuid('id').primaryKey().defaultRandom(),
   supplierId: uuid('supplier_id')
@@ -170,8 +203,62 @@ export const supplierItems = pgTable('supplier_item', {
   note: text('note'),
   active: boolean('active').notNull().default(true),
   sortOrder: integer('sort_order').notNull().default(0),
+  inventoryItemId: uuid('inventory_item_id').references(() => inventoryItems.id, {
+    onDelete: 'set null',
+  }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const stockMovements = pgTable('stock_movement', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  inventoryItemId: uuid('inventory_item_id')
+    .notNull()
+    .references(() => inventoryItems.id, { onDelete: 'restrict' }),
+  kind: stockMovementKindEnum('kind').notNull(),
+  quantityDelta: numeric('quantity_delta', { precision: 18, scale: 6 }).notNull(),
+  source: stockMovementSourceEnum('source').notNull(),
+  refType: text('ref_type'),
+  refId: text('ref_id'),
+  note: text('note'),
+  createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const goodsReceipts = pgTable('goods_receipt', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orderId: uuid('order_id')
+    .notNull()
+    .references(() => purchaseOrders.id, { onDelete: 'cascade' }),
+  receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
+  receivedBy: uuid('received_by').references(() => users.id, { onDelete: 'set null' }),
+  note: text('note'),
+});
+
+export const goodsReceiptLines = pgTable('goods_receipt_line', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  receiptId: uuid('receipt_id')
+    .notNull()
+    .references(() => goodsReceipts.id, { onDelete: 'cascade' }),
+  orderLineId: uuid('order_line_id')
+    .notNull()
+    .references(() => purchaseOrderLines.id, { onDelete: 'restrict' }),
+  quantityReceived: numeric('quantity_received', { precision: 18, scale: 6 }).notNull(),
+});
+
+export const menuRecipeLines = pgTable(
+  'menu_recipe_line',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    menuItemId: uuid('menu_item_id')
+      .notNull()
+      .references(() => menuItems.id, { onDelete: 'cascade' }),
+    inventoryItemId: uuid('inventory_item_id')
+      .notNull()
+      .references(() => inventoryItems.id, { onDelete: 'restrict' }),
+    quantityPerPortion: numeric('quantity_per_portion', { precision: 18, scale: 6 }).notNull(),
+  },
+  (t) => [uniqueIndex('menu_recipe_line_menu_inventory').on(t.menuItemId, t.inventoryItemId)]
+);
 
 export const orderEmailTemplates = pgTable('order_email_template', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -220,19 +307,61 @@ export const suppliersRelations = relations(suppliers, ({ many }) => ({
   orders: many(purchaseOrders),
 }));
 
+export const inventoryItemsRelations = relations(inventoryItems, ({ many }) => ({
+  supplierItems: many(supplierItems),
+  movements: many(stockMovements),
+  recipeLines: many(menuRecipeLines),
+}));
+
 export const supplierItemsRelations = relations(supplierItems, ({ one }) => ({
   supplier: one(suppliers, { fields: [supplierItems.supplierId], references: [suppliers.id] }),
+  inventoryItem: one(inventoryItems, {
+    fields: [supplierItems.inventoryItemId],
+    references: [inventoryItems.id],
+  }),
+}));
+
+export const stockMovementsRelations = relations(stockMovements, ({ one }) => ({
+  inventoryItem: one(inventoryItems, {
+    fields: [stockMovements.inventoryItemId],
+    references: [inventoryItems.id],
+  }),
 }));
 
 export const purchaseOrdersRelations = relations(purchaseOrders, ({ one, many }) => ({
   supplier: one(suppliers, { fields: [purchaseOrders.supplierId], references: [suppliers.id] }),
   lines: many(purchaseOrderLines),
+  receipts: many(goodsReceipts),
 }));
 
 export const purchaseOrderLinesRelations = relations(purchaseOrderLines, ({ one }) => ({
   order: one(purchaseOrders, {
     fields: [purchaseOrderLines.orderId],
     references: [purchaseOrders.id],
+  }),
+}));
+
+export const goodsReceiptsRelations = relations(goodsReceipts, ({ one, many }) => ({
+  order: one(purchaseOrders, { fields: [goodsReceipts.orderId], references: [purchaseOrders.id] }),
+  lines: many(goodsReceiptLines),
+}));
+
+export const goodsReceiptLinesRelations = relations(goodsReceiptLines, ({ one }) => ({
+  receipt: one(goodsReceipts, {
+    fields: [goodsReceiptLines.receiptId],
+    references: [goodsReceipts.id],
+  }),
+  orderLine: one(purchaseOrderLines, {
+    fields: [goodsReceiptLines.orderLineId],
+    references: [purchaseOrderLines.id],
+  }),
+}));
+
+export const menuRecipeLinesRelations = relations(menuRecipeLines, ({ one }) => ({
+  menuItem: one(menuItems, { fields: [menuRecipeLines.menuItemId], references: [menuItems.id] }),
+  inventoryItem: one(inventoryItems, {
+    fields: [menuRecipeLines.inventoryItemId],
+    references: [inventoryItems.id],
   }),
 }));
 
@@ -244,8 +373,9 @@ export const menuCategoriesRelations = relations(menuCategories, ({ many }) => (
   items: many(menuItems),
 }));
 
-export const menuItemsRelations = relations(menuItems, ({ one }) => ({
+export const menuItemsRelations = relations(menuItems, ({ one, many }) => ({
   category: one(menuCategories, { fields: [menuItems.categoryId], references: [menuCategories.id] }),
+  recipeLines: many(menuRecipeLines),
 }));
 
 export const workers = pgTable('worker', {

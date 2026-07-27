@@ -19,7 +19,14 @@ export const permProvozSales = requirePermission('provoz.sales');
 export const permProvozReceipts = requirePermission('provoz.receipts');
 export const permProvozOrders = requirePermission('provoz.orders');
 export const permProvozOrdersSend = requirePermission('provoz.orders.send', 'provoz.orders');
-export const permProvozOrdersRead = requirePermission('provoz.orders', 'provoz.orders.send');
+export const permProvozOrdersRead = requirePermission(
+  'provoz.orders',
+  'provoz.orders.send',
+  'provoz.stock'
+);
+export const permProvozStock = requirePermission('provoz.stock');
+/** Čtení surovin i pro správce menu (receptury). */
+export const permInventoryRead = requirePermission('provoz.stock', 'site.menu');
 
 export const permAccountingRead = requirePermission('accounting.read');
 export const permAccountingBook = requirePermission('accounting.book');
